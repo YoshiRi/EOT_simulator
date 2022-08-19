@@ -5,8 +5,9 @@ Observation model: Surface
 Shape tracking method: Random Matrix
 
 Followed Paper: 
-- [Basic concept] Granström, Karl; Baum, Marcus (2022): A Tutorial on Multiple Extended Object Tracking. TechRxiv. Preprint. https://doi.org/10.36227/techrxiv.19115858.v1
-- [Predict] 
+- [Basic Concept] M. Feldmann, D. Franken, and J. W. Koch, “Tracking of extended objects and group targets using random matrices,” IEEE Transactionson Signal Processing, vol. 59, no. 4, pp. 1409–1420, Apr. 2011
+- [Overview] Granström, Karl; Baum, Marcus (2022): A Tutorial on Multiple Extended Object Tracking. TechRxiv. Preprint. https://doi.org/10.36227/techrxiv.19115858.v1
+- [ ] 
 
 Yoshi Ri
 yoshi.ri@tier4.jp
@@ -54,7 +55,22 @@ class RandomMatrixTracker():
 
 
 
-    def predict_and_update(self,ox,oy,dt):
+    def predict_and_update(self,ox,oy,dt,tau=2,process_noise=10):
+        """Do Prediction and Update with sensor input
+
+        Args:
+            ox (_type_): x coordinate of lidar observation
+            oy (_type_): y coordinate of lidar observation
+            dt (_type_): sampling tme
+            tau (int, optional): tuning parameter for shape prediction agility. larger tau make shape estimation faster. Defaults to 2.
+            process_noise (int, optional): Random acceleration for object [m/s/s].  Defaults to 10.
+
+        Returns:
+            _type_: _description_
+        """
+        self.tau_predict = tau
+        self.q_acc = process_noise
+        
         assert len(ox)==len(oy), "Measurement must have same number of x and y axis value."
         obsnum = len(ox)
         if obsnum==0:
@@ -71,10 +87,18 @@ class RandomMatrixTracker():
         """Prediction Step
 
         Args:
-            dt (_type_): do prediction
-
+            dt (_type_): sampling time
+        
         Returns:
             _type_: position state, position cov, shape scalar, shape matrix
+        
+        Note:
+
+        m_ = F m
+        P_ = F P F^T + Q
+        v_ = 2d + 2 + e−Ts/τ (v − 2d − 2)
+        V_ = v+−2d−2 / v−2d−2 V
+
         """
         # matrix assume state shape is [x, y, vx, vy]
         A_ = [[1,0,dt,0],
@@ -84,12 +108,13 @@ class RandomMatrixTracker():
         A = np.array(A_).reshape(4,4)
         Bx = np.array([dt*dt/2,0, dt,0]).reshape(-1,1)
         By = np.array([0,dt*dt/2,0, dt]).reshape(-1,1)
-        omega = np.array([10]).reshape(-1,1) # system noise covariance: acc
+        omega = np.array([self.q_acc]).reshape(-1,1) # system noise covariance: acc
 
+        d = 2 # measurement dimension
         m_ = A @ self.m 
         P_ = A @ self.P @ A.T  + Bx @ omega @ Bx.T + By @ omega @ By.T # additive system noise
-        v_ = self.v
-        V_ = self.V
+        v_ = 2*d + 2 + np.exp(-dt/self.tau_predict) *(self.v - 2*d -2)
+        V_ = (v_ - 2*d -2)/(self.v - 2*d -2)*self.V
         return m_, P_, v_, V_
 
     def measurement_update(self,m_,P_,v_,V_,z):
