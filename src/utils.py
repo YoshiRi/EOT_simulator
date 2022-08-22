@@ -23,9 +23,17 @@ def numerical_grad(func, x, i, eps=1e-9, *other_args):
     r_eps = max(np.abs(x_m[i])*eps, eps)
     x_m[i] -= r_eps
     x_p[i] += r_eps
-    print(x_arr, x_m, x_p)
     fp = func(x_p, *other_args)
     fm = func(x_m, *other_args)
     grad = (fp-fm)/r_eps/2
     return grad
 
+def numerical_jacob(func, x, *other_args):
+    x = np.array(x).reshape(-1)
+    N = len(x)
+    Jacob = np.array([])
+    for i in range(N):
+        grad_ = numerical_grad(func,x,i,*other_args)
+        grad = grad_.reshape(1,-1)
+        Jacob = np.vstack([Jacob,grad]) if Jacob.size else grad
+    return Jacob
