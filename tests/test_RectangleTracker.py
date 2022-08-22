@@ -1,5 +1,5 @@
 import pytest
-from src.tracker.GMPHD_RectangleTracker import *
+from src.tracker.RectangleTracker import *
 
 def test_estimate_number_of_sides():
     z_1 = [[0,0],[1,0],[2,0],[3,0]]
@@ -16,7 +16,10 @@ def test_point2line_distance():
 
 def test_find_corner_index():
     z_1 = [[0,1],[0,0],[1,0],[2,0],[3,0]]
-    assert find_corner_index(z_1) == 1
+    assert find_corner_index(z_1)[0] == 1
+
+    z_2 = [[0,1],[0,0],[1,0]]
+    assert find_corner_index(z_2)[0] == 1
 
 
 def test_coords_divide():
