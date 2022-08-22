@@ -1,13 +1,43 @@
 """Basic functions Rectangle Tracker Utility
 """
-import numpy as np
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 
+import numpy as np
+from utils import rot_mat_2d, vec2rad, rad_distance
+
+
+# temporary 
+def measurements_process(measurements,state):
+    side_num = estimate_number_of_sides(measurements)
+    if side_num == 1:
+        measurements_normalvec_angle(measurements)
+    elif side_num == 2:
+        corner_index, parted_measurements = find_corner_index(measurements)
+        measurements_normalvec_angle(measurements)
+
+
+
+def measurements_normalvec_angle(measurements):
+    """calc normal vector angle of the 
+
+    Args:
+        measurements (_type_): measurements [[z1x, z1y],...,[znx,zny]]
+
+    Returns:
+        _type_: angle of z1 -> zn + pi/2
+    """
+    p0 = measurements[0] # start
+    pn = measurements[1] # end
+    dp = [pn[i] - p0[i] for i in range(2)]
+    return vec2rad(dp) + np.pi/2.0
 
 def estimate_number_of_sides(measurements,threshold=25):
     """Estimate number of measured rectangle sides
 
     Args:
-        measurements (_type_): list of measured points coorinate
+        measurements (_type_): list of list of measured points coorinate
         threshold (int, optional): _description_. Defaults to 25.
 
     Returns:
@@ -176,14 +206,16 @@ class RectangleShapePrediction():
         return np.array(divided_coords).reshape(-1,2)
 
     def divide_coords(self, div_num, indx):
-        """Assume lidar estimation is clock wise
+        """Return divided coordinate for estimating
+        Note: 
+            Assume lidar estimation is clock wise
 
         Args:
             div_num (_type_): number of measurement point in one side
             indx (_type_): side index 0 is front, 1 is right, 2 is back, 3 is left 
 
         Returns:
-            _type_: Nx2 np array [[x1,y1],[x2, y2]...]
+            coords(np.array): Nx2 row vector [[x1,y1].T,[x2, y2].T ...].T
         """
         R90 = rot_mat_2d(np.pi/2)
         R180 = rot_mat_2d(np.pi)
@@ -204,3 +236,4 @@ class RectangleShapePrediction():
         else:
             coords =  None
         return coords
+    

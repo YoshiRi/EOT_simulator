@@ -1,6 +1,12 @@
 import pytest
 from src.tracker.RectangleTracker import *
 
+def test_measurement_normalvec_angle():
+    Z1 = [[0,0],[0,1]]
+    Z2 = [[0,-1],[0,-1]]
+    assert measurements_normalvec_angle(Z1) == np.pi
+    assert measurements_normalvec_angle(Z2) == np.pi/2.0
+    
 def test_estimate_number_of_sides():
     z_1 = [[0,0],[1,0],[2,0],[3,0]]
     z_2 = [[0,1],[0,0],[1,0],[2,0],[3,0]]
@@ -30,8 +36,8 @@ def test_coords_divide():
 
     front = rsp.divide_coords(1,0)[0]
     estimated_front = np.array([0,rsp.length/2])
-    assert np.allclose(front,estimated_front)
+    assert np.allclose(front, estimated_front)
 
     right = rsp.divide_coords(3,1)[1]         # take center point
     estimated_right = np.array([rsp.width/2,0])
-    assert np.allclose(right,estimated_right) # array_equal sometimes fail due to calc error
+    assert np.allclose(right, estimated_right) # array_equal sometimes fail due to calc error
