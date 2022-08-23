@@ -29,3 +29,39 @@ def test_numerical_jacob():
     J = numerical_jacob(func,X0)
     assert np.allclose(J,d_func(X0)) 
     
+
+def test_ellipsoid(showflag=False):
+    shape = EllipsoidData()
+    shape.init_with_param([0,0],10,8,30)
+    if showflag:
+        import matplotlib.pyplot as plt
+        plt.figure()
+        shape.plot()
+        plt.xlim([-20,20])
+        plt.ylim([-20,20])
+        plt.grid()
+    
+    Cov=shape.calc_ellipse_matrix(100,64,np.deg2rad(30))
+    shape.init_with_cov([0,0],Cov)
+    if showflag:
+        plt.figure()
+        shape.plot()
+        plt.xlim([-20,20])
+        plt.ylim([-20,20])
+        plt.grid()
+        plt.show()
+
+
+def test_rectangle(showflag=False):
+    shape = RectangleData()
+    shape.center = [0,0]
+    shape.width = 1
+    shape.length = 2
+    shape.orientation = 0.2
+
+    if showflag:
+        plt.figure(1)
+        plt.xlim([-20,20])
+        plt.ylim([-20,20])
+        shape.plot()
+        plt.show()
