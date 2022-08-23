@@ -36,7 +36,7 @@ def init_rectangle(state):
     """
     rs = RectangleShapePrediction()
     state = state.reshape(-1)
-    rs.orientation = state[4]
+    rs.orientation = state[3]
     rs.center = np.array([state[0], state[1]]).reshape(-1,1)
     rs.length = state[5]
     rs.width = state[6]
