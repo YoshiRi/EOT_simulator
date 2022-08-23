@@ -9,15 +9,38 @@ from utils import rot_mat_2d, vec2rad, rad_distance
 
 
 # temporary 
-def measurements_process(measurements,state):
+def get_estimated_rectangular_points(state,measurements):
     side_num = estimate_number_of_sides(measurements)
+    rs_obj = init_rectangle(state)
+    estimated_measurements = np.array([])
+
     if side_num == 1:
-        measurements_normalvec_angle(measurements)
+        nvec_rad = measurements_normalvec_angle(measurements)
+        idx = rs_obj.find_closest_angle(nvec_rad)
+        estimated_measurements = rs_obj.divide_coords(len(measurements),idx)
+
     elif side_num == 2:
         corner_index, parted_measurements = find_corner_index(measurements)
-        measurements_normalvec_angle(measurements)
+        for pm in parted_measurements:
+            nvec_rad = measurements_normalvec_angle(pm)
+            idx = rs_obj.find_closest_angle(nvec_rad)
+            em = rs_obj.divide_coords(len(pm),idx)
+            estimated_measurements = np.vstack([estimated_measurements,em]) if estimated_measurements.size else em
+    return estimated_measurements
 
 
+
+def init_rectangle(state):
+    """
+    Set Rectangle Shape information from state [x, y, v, psi, theta, l ,w]
+    """
+    rs = RectangleShapePrediction()
+    state = state.reshape(-1)
+    rs.orientation = state[4]
+    rs.center = np.array([state[0], state[1]]).reshape(-1,1)
+    rs.length = state[5]
+    rs.width = state[6]
+    return rs
 
 def measurements_normalvec_angle(measurements):
     """calc normal vector angle of the 
@@ -148,9 +171,9 @@ class RectangleShapePrediction():
         +---b3--+
 
         Returns:
-            list of normal vector angle : [b1, b2, b3, b4]
+            list of normal vector angle of  [b1, b2, b3, b4] (outside)
         """
-        n_vecs = [self.orientation + np.pi, self.orientation + np.pi/2, self.orientation, self.orientation - np.pi/2]
+        n_vecs = [self.orientation , self.orientation - np.pi/2, self.orientation + np.pi, self.orientation + np.pi/2]
         return n_vecs
     
     def find_closest_angle(self,angle_rad, threshold=0.5):

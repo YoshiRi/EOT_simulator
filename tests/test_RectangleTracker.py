@@ -1,6 +1,13 @@
 import pytest
 from src.tracker.RectangleTracker import *
 
+
+def test_get_estimated_rectangular_points():
+    Z = [[0,1],[0,0],[1,0],[2,0],[3,0]]
+    state = np.array([0,0,0,0,0,1,0.5]).reshape(-1,1)
+    get_estimated_rectangular_points(state,Z)
+    
+
 def test_measurement_normalvec_angle():
     Z1 = [[0,0],[0,1]]
     Z2 = [[0,-1],[0,-1]]
