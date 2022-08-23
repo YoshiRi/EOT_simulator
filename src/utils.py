@@ -34,6 +34,6 @@ def numerical_jacob(func, x, **other_args):
     Jacob = np.array([])
     for i in range(N):
         grad_ = numerical_grad(func,x,i,**other_args)
-        grad = grad_.reshape(1,-1)
-        Jacob = np.vstack([Jacob,grad]) if Jacob.size else grad
+        grad = grad_.reshape(-1,1)
+        Jacob = np.hstack([Jacob,grad]) if Jacob.size else grad
     return Jacob

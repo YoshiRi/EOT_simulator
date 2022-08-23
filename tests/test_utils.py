@@ -23,7 +23,7 @@ def test_numerical_grad():
 
 def test_numerical_jacob():
     func = lambda x: x[0]*x[0] + np.cos(x[1])
-    d_func = lambda x: np.array( [2*x[0],-np.sin(x[1])]).reshape(-1,1)
+    d_func = lambda x: np.array( [2*x[0],-np.sin(x[1])]).reshape(1,-1)
     X0 = np.array([1.0,0.5]).reshape(-1,1)
 
     J = numerical_jacob(func,X0)
