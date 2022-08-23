@@ -260,3 +260,76 @@ class RectangleShapePrediction():
             coords =  None
         return coords
     
+
+
+# Vehicle model 1
+class BicycleMotionModel():
+    """state number should be 7 
+        [x, y, v, psi , theta, l, w]
+    """
+    def __init__(self, angle_threshold=1e-9) -> None:
+        self.cscv_boundary_angle = angle_threshold
+        self.v_threshold = angle_threshold # used to avoid zero division in turning radius calc
+
+    def predict(self,x, dt):
+        theta = x[4]
+        v = x[3]
+        if theta < self.cscv_boundary_angle or v < self.v_threshold:
+            x_ = self.predict_cv_model(x,dt)
+        else:
+            x_ = self.predict_cs_model(x,dt)
+        return x_
+
+    def predict_cs_model(self, x, dt):
+        v = x[2]
+        psi = x[3]
+        theta = x[4]
+        l = x[5]
+        beta = dt * v/ l * np.tan(theta)
+        TurnR = dt * v/ beta
+        x_ = np.copy(x)
+
+        x_[0] += TurnR * np.sin(psi+beta) - TurnR * np.sin(psi)
+        x_[1] += TurnR * np.cos(psi+beta) +  TurnR * np.cos(psi)
+        x_[3] += beta
+        return x_
+
+    def predict_cv_model(self, x, dt):
+        v = x[2]
+        psi = x[5]
+        Dist = dt * v
+        x_ = np.copy(x)
+
+        x_[0] += Dist * np.cos(psi)
+        x_[1] += Dist * np.sin(psi)
+        x_[3] *= np.exp(-0.5)
+
+        return x_
+
+    def predict_noise_covariance(self, q_acc, q_yawrate, q_shape, dt):
+        qp = dt*dt/2 * q_acc
+        qv = dt * q_acc
+        Q = np.diag([qp, qp, qv, q_yawrate*dt, q_yawrate,q_shape, q_shape])
+        return Q
+    
+
+# Vehicle model 2
+class ConstantVelocityModel():
+    """state number should be 7 
+    [x, y, vx, vy , phi, l, w]
+    """
+    def __init__(self) -> None:
+        pass
+
+    def predict(self, x, dt):
+        A = np.diag([1]*7)
+        A[0,2] = dt
+        A[1,3] = dt
+
+        return A @ x
+
+    def predict_noise_covariance(self, q_acc, q_angle, q_shape, dt):
+        qp = dt*dt/2 * q_acc
+        qv = dt * q_acc
+        Q = np.diag([qp, qp, qv, qv, q_angle, q_shape, q_shape])
+        return Q
