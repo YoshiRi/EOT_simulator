@@ -10,23 +10,24 @@ from utils import rot_mat_2d, vec2rad, rad_distance
 
 # temporary 
 def get_estimated_rectangular_points(state,measurements):
-    side_num = estimate_number_of_sides(measurements)
+    Z = measurements.reshape(-1,2)
+    side_num = estimate_number_of_sides(Z)
     rs_obj = init_rectangle(state)
     estimated_measurements = np.array([])
 
     if side_num == 1:
-        nvec_rad = measurements_normalvec_angle(measurements)
+        nvec_rad = measurements_normalvec_angle(Z)
         idx = rs_obj.find_closest_angle(nvec_rad)
-        estimated_measurements = rs_obj.divide_coords(len(measurements),idx)
+        estimated_measurements = rs_obj.divide_coords(Z.shape[0],idx)
 
     elif side_num == 2:
-        corner_index, parted_measurements = find_corner_index(measurements)
+        corner_index, parted_measurements = find_corner_index(Z)
         for pm in parted_measurements:
             nvec_rad = measurements_normalvec_angle(pm)
             idx = rs_obj.find_closest_angle(nvec_rad)
-            em = rs_obj.divide_coords(len(pm),idx)
+            em = rs_obj.divide_coords(pm.shape[0],idx)
             estimated_measurements = np.vstack([estimated_measurements,em]) if estimated_measurements.size else em
-    return estimated_measurements
+    return estimated_measurements.reshape(-1,1)
 
 
 
@@ -51,8 +52,9 @@ def measurements_normalvec_angle(measurements):
     Returns:
         _type_: angle of z1 -> zn + pi/2
     """
-    p0 = measurements[0] # start
-    pn = measurements[1] # end
+    Z = np.array(measurements).reshape(-1,2)
+    p0 = Z[0] # start
+    pn = Z[1] # end
     dp = [pn[i] - p0[i] for i in range(2)]
     return vec2rad(dp) + np.pi/2.0
 
@@ -66,11 +68,12 @@ def estimate_number_of_sides(measurements,threshold=25):
     Returns:
         _type_: _description_
     """
-    Nz = len(measurements)
+    Z = np.array(measurements).reshape(-1,2)
+    Nz = Z.shape[0]
+
     if Nz == 1:
         N = 1
     else:
-        Z = np.array(measurements).reshape(Nz,2) # to numpy array
         Zbar = np.mean(Z,axis=0)
         Znorm = Z-Zbar
         C = Znorm.T @ Znorm
@@ -119,7 +122,8 @@ def find_corner_index(measurements):
         corner_index : corner index 
         divided indexes: 
     """
-    Nz = len(measurements)
+    measurements = np.array(measurements).reshape(-1,2)
+    Nz = measurements.shape[0]
 
     dmin = 1e5*Nz
     corner_index = None
