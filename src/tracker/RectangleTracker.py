@@ -27,6 +27,11 @@ def get_estimated_rectangular_points(state,measurements):
             idx = rs_obj.find_closest_angle(nvec_rad,2) # this could be None when nvec_rad is not good
             em = rs_obj.divide_coords(pm.shape[0],idx)
             estimated_measurements = np.vstack([estimated_measurements,em]) if estimated_measurements.size else em
+        
+        # When N = 3 (corner is duplicated)
+        if estimated_measurements.shape[0] == Z.shape[0]+1:
+            estimated_measurements = np.delete(estimated_measurements,corner_index, axis=0) # remove duplicated corner
+
     return estimated_measurements.reshape(-1,1)
 
 
@@ -150,7 +155,7 @@ def find_corner_index(measurements):
     elif d_a_mean > d_b_mean:
         parted_measurements = [measurements[:corner_index], measurements[corner_index:]]
     else:
-        parted_measurements = [measurements[:corner_index+1], measurements[corner_index:]]
+        parted_measurements = [measurements[:corner_index+1], measurements[corner_index:]] # this is happened when N = 3
     return corner_index, parted_measurements
 
 
