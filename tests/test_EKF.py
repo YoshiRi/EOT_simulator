@@ -4,6 +4,8 @@ import pytest
 from src.EKF import ExtendedKalmanFilter
 import numpy as np
 
+from src.utils import rot_mat_2d
+
 def test_EKF():
     ekf = ExtendedKalmanFilter()
     x_init = np.array([0.,1.]).reshape(-1,1)
@@ -30,3 +32,28 @@ def test_EKF():
 
     Rnoise = np.diag([0.02])
     ekf.update_nonlinear(x_, P_, sample_measurement, [0.1], Rnoise)
+
+def test_EKF_case2():
+    ekf = ExtendedKalmanFilter()
+    x_init = np.array([0.,1.,0.3]).reshape(-1,1)
+    P_init = np.diag([1e9]*3)
+    ekf.init_state(x_init,P_init)
+
+    dt = 0.1
+    A = np.diag([1]*3)
+    A[0,1] = 0.1
+    Q = np.diag([0.05,0.1,0.01])
+    R = np.diag([0.1,0.1])
+
+    def Hfunc(x):
+        cta = x[2]
+        return rot_mat_2d(cta) @ x[:2]
+
+    z = np.array([1,1]).reshape(-1,1)
+
+    for i in range(100):
+        x_ , P_ = ekf.predict_linear(A,Q)
+        ekf.update_nonlinear(x_, P_, Hfunc, z, R)
+
+    print(Hfunc(ekf.x),ekf.x, z)
+    assert np.allclose(Hfunc(ekf.x), z)
