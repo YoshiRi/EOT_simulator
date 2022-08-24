@@ -10,7 +10,7 @@ from utils import rot_mat_2d, vec2rad, rad_distance
 
 # temporary 
 def get_estimated_rectangular_points(state,measurements):
-    Z = measurements.reshape(-1,2)
+    Z = np.array(measurements).reshape(-1,2)
     side_num = estimate_number_of_sides(Z)
     rs_obj = init_rectangle(state)
     estimated_measurements = np.array([])
@@ -24,7 +24,7 @@ def get_estimated_rectangular_points(state,measurements):
         corner_index, parted_measurements = find_corner_index(Z)
         for pm in parted_measurements:
             nvec_rad = measurements_normalvec_angle(pm)
-            idx = rs_obj.find_closest_angle(nvec_rad)
+            idx = rs_obj.find_closest_angle(nvec_rad,2) # this could be None when nvec_rad is not good
             em = rs_obj.divide_coords(pm.shape[0],idx)
             estimated_measurements = np.vstack([estimated_measurements,em]) if estimated_measurements.size else em
     return estimated_measurements.reshape(-1,1)
@@ -52,6 +52,7 @@ def measurements_normalvec_angle(measurements):
     Returns:
         _type_: angle of z1 -> zn + pi/2
     """
+    assert len(measurements) > 1, "measurements num must be larger than 1"
     Z = np.array(measurements).reshape(-1,2)
     p0 = Z[0] # start
     pn = Z[1] # end
@@ -128,8 +129,7 @@ def find_corner_index(measurements):
     dmin = 1e5*Nz
     corner_index = None
 
-    if Nz < 3:
-        return corner_index
+    assert Nz> 2, "point num must be larger than 2!"
 
     for n in range(1,Nz-1):
         d, d_a, d_b = 0, 0, 0
@@ -145,11 +145,12 @@ def find_corner_index(measurements):
             d_a_mean = safe_mean(d_a,len(range(1,n)))
             d_b_mean = safe_mean(d_b,len(range(n+1,Nz-1)))
             
-        if d_a_mean < d_b_mean:
-            parted_measurements = [measurements[:n+1], measurements[n+1:]]
-        else:
-            parted_measurements = [measurements[:n], measurements[n:]]
-        
+    if d_a_mean < d_b_mean:
+        parted_measurements = [measurements[:corner_index+1], measurements[corner_index+1:]]
+    elif d_a_mean > d_b_mean:
+        parted_measurements = [measurements[:corner_index], measurements[corner_index:]]
+    else:
+        parted_measurements = [measurements[:corner_index+1], measurements[corner_index:]]
     return corner_index, parted_measurements
 
 
