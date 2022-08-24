@@ -38,10 +38,10 @@ class ExtendedKalmanFilter():
         """
         if B is None:
             x_ = A @ self.x
-            P_ = A @ self.P @ self.A.T + Q
+            P_ = A @ self.P @ A.T + Q
         else:
             x_ = A @ self.x + B @ u
-            P_ = A @ self.P @ self.A.T + Q + B @ q_u @ B.T
+            P_ = A @ self.P @ A.T + Q + B @ q_u @ B.T
         return x_, P_
         
 
