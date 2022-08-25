@@ -47,20 +47,36 @@ from matplotlib.patches import Ellipse, Rectangle
 
 class RectangleData:
 
-    def __init__(self, plot_color="red"):
+    def __init__(self, plot_setting="-.r"):
         self.center = [None]*2
         self.width = None
         self.length = None
         self.orientation = None
-        self.plot_color = plot_color
+        self.plot_setting = plot_setting
+
+    def calc_contour(self):
+        """Return rectangle contour"""
+        R = rot_mat_2d(self.orientation) 
+        center = np.array(self.center).reshape(-1,1)
+        v1 = np.array([self.length/2, self.width/2]).reshape(-1,1)
+        v2 = np.array([self.length/2, -self.width/2]).reshape(-1,1)
+        c1 = R @ v1 + center
+        c2 = R @ v2 + center
+        c3 = -R @ v1 + center
+        c4 = -R @ v2 + center
+        contour = np.hstack([c1,c2,c3,c4,c1]).T
+        return contour
+
+    def draw_rect(self):
+        """draw rectangle contour and center without rectangle patch"""
+        contour = self.calc_contour()
+        plt.plot(contour[:,0],contour[:,1],self.plot_setting)
+        plt.plot(self.center[0],self.center[1],'ko')
+
 
     def plot(self):
         ax = plt.gca()
-        rshape = Rectangle([self.center[0], self.center[1]], self.length, self.width,
-                    angle = np.rad2deg(self.orientation),
-                    edgecolor=self.plot_color,
-                    facecolor='none')
-        ax.add_patch(rshape)
+        self.draw_rect()
 
 
 
