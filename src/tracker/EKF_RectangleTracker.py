@@ -25,7 +25,7 @@ class EKFRectangleTracker(ExtendedKalmanFilter):
     def __init__(self) -> None:
         super().__init__()
         self.x = np.array([0.0]*7).reshape(-1,1) 
-        self.P = np.diag([1e9]*7)
+        self.P = np.diag([1e4,1e4,1e9,1e2,1e9,1e2,1e2])
         self.set_shape(1,1) # shape should larger than 0
         self.sensor_noise =1e-1
         self.dt = 1e-1
