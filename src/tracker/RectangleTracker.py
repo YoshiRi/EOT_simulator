@@ -259,13 +259,13 @@ class RectangleShapePrediction():
             coords = center + coords_
         elif indx == 1:
             coords_ = self.get_equally_divided_coords(div_num,self.length,self.width)
-            coords = np.transpose(R90.T @ coords_.T)
+            coords = center + np.transpose(R90.T @ coords_.T)
         elif indx == 2:
             coords_ = self.get_equally_divided_coords(div_num,self.width,self.length)
-            coords = np.transpose(R180 @ coords_.T)
+            coords = center + np.transpose(R180 @ coords_.T)
         elif indx == 3:
             coords_ = self.get_equally_divided_coords(div_num,self.length,self.width)
-            coords = np.transpose(R90 @ coords_.T)
+            coords = center + np.transpose(R90 @ coords_.T)
         else:
             coords =  None
         return coords
