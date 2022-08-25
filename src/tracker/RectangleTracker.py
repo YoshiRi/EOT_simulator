@@ -3,6 +3,7 @@
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
+import logging
 
 import numpy as np
 from utils import rot_mat_2d, vec2rad, rad_distance
@@ -267,6 +268,7 @@ class RectangleShapePrediction():
             coords_ = self.get_equally_divided_coords(div_num,self.length,self.width)
             coords = center + np.transpose(R90 @ coords_.T)
         else:
+            logging.error()
             coords =  None
         return coords
     
