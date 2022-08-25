@@ -102,7 +102,8 @@ class ExtendedKalmanFilter():
         else:
             J_H = H_jacob(x_, **other_args)
         
-        err = z - H_func(x_, **other_args)
+        z_est = H_func(x_, **other_args) # separated for debugging
+        err = z - z_est
         S = J_H @ P_ @ J_H.T + R
         K = P_ @ J_H.T @ np.linalg.inv(S)
         self.x = x_ + K @ err

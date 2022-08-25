@@ -106,6 +106,7 @@ def senario1():
     tracker.set_model()
     tracker.set_shape(5,3)
     tracker.set_pos([-10,0])
+    tracker.set_orientation_bicycle(np.pi/2)
 
     sim.run(tracker)
     print("Done")
