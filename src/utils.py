@@ -14,7 +14,9 @@ def rad_distance(a1,a2):
     dist = np.abs(a1 - a2)
     while dist >= 2*np.pi:
         dist -= 2*np.pi
-    return dist
+    if np.abs(dist) > np.pi:
+        min_dist  = 2*np.pi - np.abs(dist)  
+    return min_dist
 
 
 # numerical gradient input: func must be a function and x is vector 
