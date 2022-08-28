@@ -25,7 +25,7 @@ def get_estimated_rectangular_points(state,measurements):
         corner_index, parted_measurements = find_corner_index(Z)
         for pm in parted_measurements:
             nvec_rad = measurements_normalvec_angle(pm)
-            idx = rs_obj.find_closest_angle(nvec_rad,2) # this could be None when nvec_rad is not good
+            idx = rs_obj.find_closest_angle(nvec_rad) # this could be None when nvec_rad is not good
             em = rs_obj.divide_coords(pm.shape[0],idx)
             estimated_measurements = np.vstack([estimated_measurements,em]) if estimated_measurements.size else em
         
@@ -187,7 +187,7 @@ class RectangleShapePrediction():
         n_vecs = [self.orientation , self.orientation - np.pi/2, self.orientation + np.pi, self.orientation + np.pi/2]
         return n_vecs
     
-    def find_closest_angle(self,angle_rad, threshold=0.5):
+    def find_closest_angle(self,angle_rad, threshold=0.25*np.pi):
         """find closest direction
 
         Args:
@@ -268,7 +268,7 @@ class RectangleShapePrediction():
             coords_ = self.get_equally_divided_coords(div_num,self.length,self.width)
             coords = center + np.transpose(R90 @ coords_.T)
         else:
-            logging.error()
+            logging.error("indx: " + str(indx))
             coords =  None
         return coords
     
