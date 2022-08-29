@@ -62,7 +62,7 @@ class EKFRectangleTracker(ExtendedKalmanFilter):
 
     def measurement_process(self, z, dt):
 
-        Qnoise = self.motion_model.predict_noise_covariance(1e2,1e-1,1e-9,dt)
+        Qnoise = self.motion_model.predict_noise_covariance(1e2,1e-1,1e-9,dt) #pos(acc) cov, rot cov, shape cov
         x_, P_ = self.predict_nonlinear(self.motion_model.predict, Qnoise, dt=dt)
         
         # reshape measurement as row vector
@@ -137,8 +137,8 @@ def senario1():
     sim = PerceptionSimulator(dt=0.1)
     v1 = VehicleSimulator(-10.0, 10.0, np.deg2rad(90.0),
                           0.0, 50.0 / 3.6, 3.0, 5.0)
-
-    sim.append_vehicle(v1)
+    vref = [0.1, 0]
+    sim.append_vehicle(v1,vref)
 
     tracker = EKFRectangleTracker()
     tracker.set_model()
@@ -149,6 +149,23 @@ def senario1():
     sim.run(tracker)
     print("Done")
 
+def senario2():
+    sim = PerceptionSimulator(dt=0.1)
+    v1 = VehicleSimulator(-10.0, 30.0, np.deg2rad(90.0),
+                          0.0, 50.0 / 3.6, 3.0, 5.0)
+    vref = [-0.1, 0]
+    sim.append_vehicle(v1,vref)
+
+    tracker = EKFRectangleTracker()
+    tracker.set_model()
+    tracker.set_shape(6,4)
+    tracker.set_pos([-10,30])
+    tracker.set_orientation(np.pi/2)
+
+    sim.run(tracker)
+    print("Done")
+
 
 if __name__=="__main__":
-    senario1()
+    #senario1()
+    senario2()
