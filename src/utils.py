@@ -62,8 +62,8 @@ class RectangleData:
         """Return rectangle contour"""
         R = rot_mat_2d(self.orientation) 
         center = np.array(self.center).reshape(-1,1)
-        v1 = np.array([self.width/2, self.length/2]).reshape(-1,1)
-        v2 = np.array([self.width/2, -self.length/2]).reshape(-1,1)
+        v1 = np.array([self.length/2, self.width/2]).reshape(-1,1)
+        v2 = np.array([self.length/2, -self.width/2]).reshape(-1,1)
         c1 = R @ v1 + center
         c2 = R @ v2 + center
         c3 = -R @ v1 + center
