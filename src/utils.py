@@ -15,7 +15,9 @@ def rad_distance(a1,a2):
     while dist >= 2*np.pi:
         dist -= 2*np.pi
     if np.abs(dist) > np.pi:
-        min_dist  = 2*np.pi - np.abs(dist)  
+        min_dist  = 2*np.pi - np.abs(dist)
+    else:
+        min_dist = dist
     return min_dist
 
 
