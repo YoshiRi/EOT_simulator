@@ -10,6 +10,7 @@ Yoshi Ri
 """
 
 from ast import Constant
+from selectors import EpollSelector
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
@@ -69,14 +70,18 @@ class EKFRectangleTracker(ExtendedKalmanFilter):
         measurements = np.array(z).reshape(-1,1)
 
         # show estimation
-        estimated_measurements = get_estimated_rectangular_points(self.x, measurements).reshape(-1,2)
+        #estimated_measurements = get_estimated_rectangular_points(self.x, measurements).reshape(-1,2)
+        estimated_measurements = calc_rectangle_counter(x_, measurements).reshape(-1,2)
         import matplotlib.pyplot as plt
-        plt.plot(estimated_measurements[:,0], estimated_measurements[:,1],'o')
+        plt.plot(measurements.reshape(-1,2)[:,0], measurements.reshape(-1,2)[:,1],'x')
+        plt.plot(estimated_measurements[:,0], estimated_measurements[:,1],'ko')
         #plt.show()
 
         if len(z) > 0:
             Rnoise = np.diag([self.sensor_noise]*len(z)*2)
-            self.update_nonlinear(x_, P_, get_estimated_rectangular_points,measurements, Rnoise, measurements=measurements)
+            #self.update_nonlinear(x_, P_, get_estimated_rectangular_points,measurements, Rnoise, measurements=measurements)
+            self.update_nonlinear(x_, P_, calc_rectangle_counter, measurements, Rnoise,  measurements=measurements)
+            
         else:
             self.x = x_
             self.P = P_
@@ -133,6 +138,165 @@ class EKFRectangleTracker(ExtendedKalmanFilter):
         plt.show()
 
 
+
+
+def calc_rectangle_counter(x, measurements):
+    obj = calcRectangleCounter()
+    obj.init_from_constant_velocity_model_state(x)
+    z_est = obj.calc_measurement_points(measurements)
+    return z_est 
+
+class calcRectangleCounter(RectangleShapePrediction):
+    def __init__(self) -> None:
+        pass
+
+    def init_with_param(self,center,orientation,l,w):
+        self.center = np.array(center).reshape(2,1).astype(float)
+        self.orientation = orientation
+        self.l = float(l)
+        self.w = float(w)
+
+    def init_from_constant_velocity_model_state(self,x_state):
+        center = x_state[0:2]
+        psi = x_state[4]
+        self.init_with_param(center,psi,x_state[5],x_state[6])        
+
+    def calcS(self, idx, n, Nz):
+        SW = np.array([0,1,1,0]).reshape(2,2)
+        S1 = np.diag([0.5, -(2.*n+1-Nz)/Nz/2.]).reshape(2,2)
+        S2 = rot_mat_2d(-np.pi/2) @ S1 @ SW
+        S3 = rot_mat_2d(np.pi) @ S1
+        S4 = rot_mat_2d(np.pi/2) @ S1 @ SW
+        S = [S1,S2,S3,S4]
+        return S[idx]
+
+    def dRmatrix(self,rad):
+        """2d rotation derivative"""
+        dR = np.array([-np.sin(rad), -np.cos(rad), np.cos(rad), -np.sin(rad)]).reshape(2,2)
+        return dR
+
+    def calc_JacobH_part(self, parted_z):
+        """Calc jacobian from measurements set z
+
+        Args:
+            parted_z (_type_): measurement array
+
+        Returns:
+            _type_: jacobian
+        """
+        pz = np.array(parted_z).reshape(-1,2)
+        nvec_rad = measurements_normalvec_angle(pz)
+        idx = self.find_closest_angle(nvec_rad)
+
+        R = rot_mat_2d(self.orientation)
+        dR = self.dRmatrix(self.orientation)
+        lwvec = np.array([self.l, self.w]).reshape(2,1)
+
+        J_H = np.array([])
+        Nz = pz.shape[0]
+        for i in range(Nz):
+            S = self.calcS(idx, i, Nz)
+            J_Hn = np.hstack([np.eye(2), dR @ S @ lwvec, np.zeros((2,1)), R @ S ])
+
+            J_H = np.vstack([J_H, J_Hn]) if J_H.shape[0] else J_Hn
+        return J_H
+
+    def calc_JacobH(self, measurement):
+        """Calc Jacobian from measurement
+
+        Args:
+            measurement (_type_): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        Z = np.array(measurement).reshape(-1,2)
+        side_num = estimate_number_of_sides(Z)
+        J_H = np.array([])
+        
+        if side_num == 1:
+            J_H = self.calc_JacobH_part(Z)
+        elif side_num == 2:
+            corner_index, parted_measurements = find_corner_index(Z)
+            for pm in parted_measurements:
+                J_Hn = self.calc_JacobH_part(pm)
+                J_H  = np.vstack([J_H, J_Hn]) if J_H.size else J_Hn
+        else:
+            print("side num must be 1 or 2! current value is: ", side_num)
+            sys.exit(-1)
+
+        return J_H
+
+    def calc_measurement_points_part(self, parted_z, idx):
+        """Calc jacobian from measurements set z
+
+        Args:
+            parted_z (_type_): measurement array
+
+        Returns:
+            _type_: jacobian
+        """
+        pz = np.array(parted_z).reshape(-1,2)
+
+        R = rot_mat_2d(self.orientation)
+        lwvec = np.array([self.l, self.w]).reshape(2,1)
+
+        Z_hat = np.array([])
+        Nz = pz.shape[0]
+        for i in range(Nz):
+            S = self.calcS(idx, i, Nz)
+            z_est = R @ S @ lwvec + self.center
+
+            Z_hat = np.vstack([Z_hat, z_est]) if Z_hat.size else z_est
+        return Z_hat
+
+
+    def calc_measurement_points(self, measurement):
+        Z = np.array(measurement).reshape(-1,2)
+        side_num = estimate_number_of_sides(Z)
+        Z_hat = np.array([])
+        
+        if side_num == 1:
+            idx = self.guess_measurements_side(Z)
+            Z_hat = self.calc_measurement_points_part(Z,idx)
+        elif side_num == 2:
+            corner_index, parted_measurements = find_corner_index(Z)
+            idxs = self.guess_measurements_sides(parted_measurements, corner_index)
+            for pm,idx in zip(parted_measurements, idxs):
+                #idx = self.guess_measurements_side(pm)
+                Z_Hn = self.calc_measurement_points_part(pm,idx)
+                Z_hat  = np.vstack([Z_hat, Z_Hn]) if Z_hat.size else Z_Hn
+        else:
+            print("side num must be 1 or 2! current value is: ", side_num)
+            sys.exit(-1)
+
+        # When N = 3 (corner is duplicated)
+        if Z_hat.shape[0] == Z.shape[0]+1:
+            Z_hat = np.delete(Z_hat,corner_index, axis=0) # remove duplicated corner
+
+        return Z_hat
+
+    def guess_measurements_side(self, measurement):
+        Z = np.array(measurement).reshape(-1,2)
+        nvec_rad = measurements_normalvec_angle(Z)
+        idx = self.find_closest_angle(nvec_rad)
+        return idx
+
+    def guess_measurements_sides(self, measurements, corner_index):
+        Z1 = np.array(measurements[0]).reshape(-1,2)
+        Z2 = np.array(measurements[1]).reshape(-1,2)
+        Z = np.vstack([Z1, Z2])
+        
+        nvec_rad = measurements_normalvec_angle([Z1[0], Z[corner_index]])
+        idx1 = self.find_closest_angle(nvec_rad)
+        nvec_rad = measurements_normalvec_angle([Z[corner_index], Z2[-1]])
+        idx2 = self.find_closest_angle(nvec_rad)
+
+        return [idx1, idx2]
+
+
+
+
 def senario1():
     sim = PerceptionSimulator(dt=0.1)
     v1 = VehicleSimulator(-10.0, 10.0, np.deg2rad(90.0),
@@ -166,6 +330,23 @@ def senario2():
     print("Done")
 
 
+def senario3():
+    sim = PerceptionSimulator(dt=0.1)
+    v1 = VehicleSimulator(-10.0, 0.0, np.deg2rad(90.0),
+                          0.0, 50.0 / 3.6, 3.0, 5.0)
+    vref = [0.1, 0.1]
+    sim.append_vehicle(v1,vref)
+
+    tracker = EKFRectangleTracker()
+    tracker.set_model()
+    tracker.set_shape(6,4)
+    tracker.set_pos([-10,0])
+    tracker.set_orientation(np.pi/2)
+
+    sim.run(tracker)
+    print("Done")
+
 if __name__=="__main__":
     #senario1()
-    senario2()
+    #senario2()
+    senario3()
