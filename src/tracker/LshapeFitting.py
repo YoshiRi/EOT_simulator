@@ -23,6 +23,7 @@ import itertools
 from enum import Enum
 
 from utils import rot_mat_2d
+from simulator import PerceptionSimulator, VehicleSimulator
 
 show_animation = True
 
@@ -172,7 +173,7 @@ class LShapeFitting:
 
         return S
 
-
+# override
 class RectangleData:
 
     def __init__(self):
@@ -205,9 +206,19 @@ class RectangleData:
         y = (a[1] * -c[0] - a[0] * -c[1]) / (a[0] * b[1] - a[1] * b[0])
         return x, y
 
-def main():
-    RectangleData()
+
+def senario1():
+    sim = PerceptionSimulator(dt=0.1)
+    v1 = VehicleSimulator(-10.0, 0.0, np.deg2rad(90.0),
+                          0.0, 50.0 / 3.6, 3.0, 5.0)
+
+    sim.append_vehicle(v1)
+
+    tracker = LShapeFitting()
+
+    sim.run(tracker)
+    print("Done")
 
 
-if __name__ == '__main__':
-    main()
+if __name__=="__main__":
+    senario1()

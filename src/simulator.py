@@ -11,7 +11,6 @@ import math
 import random
 
 from utils import rot_mat_2d
-from tracker.LshapeFitting import LShapeFitting
 
 
 LIDAR_NOISE_SIGMA = 0.01
@@ -180,6 +179,17 @@ class VehicleSimulator:
         return rx, ry
 
 
+class SurfaceSensing:
+    def __init__(self,range_noise=0.01):
+        """Surfance Sensing Model
+        Obserbation point is uniformly included the vehicle
+        """
+        self.range_noise = range_noise
+
+    def get_observation_points(self, v_list, pointsnum):
+        for v in v_list:        
+            pass
+
 class LidarSimulator:
 
     def __init__(self,range_noise=0.01):
@@ -235,7 +245,7 @@ class LidarSimulator:
 
 
 
-def senario1():
+def senario1(tracker=None):
 
     sim = PerceptionSimulator(dt=0.2)
 
@@ -245,9 +255,9 @@ def senario1():
     sim.append_vehicle(v1)
 
 
-    l_shape_fitting = LShapeFitting()
+    fitting_func = tracker()
 
-    sim.run(l_shape_fitting)
+    sim.run(fitting_func)
     print("Done")
 
 

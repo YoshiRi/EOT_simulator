@@ -37,15 +37,15 @@ class ExtendedKalmanFilter():
             x_, P_ : Predicted state and covariance
         """
         if B is None:
-            x_ = A @ self,x
-            P_ = A @ self.P @ self.A.T + Q
+            x_ = A @ self.x
+            P_ = A @ self.P @ A.T + Q
         else:
             x_ = A @ self.x + B @ u
-            P_ = A @ self.P @ self.A.T + Q + B @ q_u @ B.T
+            P_ = A @ self.P @ A.T + Q + B @ q_u @ B.T
         return x_, P_
         
 
-    def predict_nonlinear(self, F_func, Q, Jacob_F = None, *other_arg):
+    def predict_nonlinear(self, F_func, Q, Jacob_F = None, **other_args):
         """General Prediction
 
         Args:
@@ -59,11 +59,11 @@ class ExtendedKalmanFilter():
         """
 
         if Jacob_F is None:
-            J_F = numerical_grad(F_func, self.x, *other_arg)# numerical grad to calc jacobian
+            J_F = numerical_jacob(F_func, self.x, **other_args)# numerical grad to calc jacobian
         else:
-            J_F = Jacob_F(self.x, *other_arg)
+            J_F = Jacob_F(self.x, **other_args)
 
-        x_ = F_func(self.x, *other_arg)
+        x_ = F_func(self.x, **other_args)
         P_ = J_F @ self.P @ J_F.T + Q
         return x_, P_
 
@@ -83,7 +83,7 @@ class ExtendedKalmanFilter():
         self.x = x_ + K @ err
         self.P = (np.eye(P_.shape[0]) - K @ C) @ P_
 
-    def update_nonlinear(self, x_, P_, H_func, z, R, H_jacob=None, *other_args):
+    def update_nonlinear(self, x_, P_, H_func, z, R, H_jacob=None, **other_args):
         """Non Linear Update
 
         Args:
@@ -98,11 +98,12 @@ class ExtendedKalmanFilter():
 
 
         if H_jacob is None:
-            J_H = numerical_jacob(H_func,x_,*other_args)
+            J_H = numerical_jacob(H_func,x_,**other_args)
         else:
-            J_H = H_jacob(x_, *other_args)
+            J_H = H_jacob(x_, **other_args)
         
-        err = z - H_func(x_, *other_args)
+        z_est = H_func(x_, **other_args) # separated for debugging
+        err = z - z_est
         S = J_H @ P_ @ J_H.T + R
         K = P_ @ J_H.T @ np.linalg.inv(S)
         self.x = x_ + K @ err

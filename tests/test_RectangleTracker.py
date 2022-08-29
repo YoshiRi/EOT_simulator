@@ -1,6 +1,13 @@
 import pytest
 from src.tracker.RectangleTracker import *
 
+
+def test_get_estimated_rectangular_points():
+    Z = [[0,1],[0,0],[1,0],[2,0],[3,0]]
+    state = np.array([0,0,0,0,0,1,0.5]).reshape(-1,1)
+    get_estimated_rectangular_points(state,Z)
+
+
 def test_measurement_normalvec_angle():
     Z1 = [[0,0],[0,1]]
     Z2 = [[0,-1],[0,-1]]
@@ -41,3 +48,22 @@ def test_coords_divide():
     right = rsp.divide_coords(3,1)[1]         # take center point
     estimated_right = np.array([rsp.width/2,0])
     assert np.allclose(right, estimated_right) # array_equal sometimes fail due to calc error
+
+
+def test_Bicycle_model():
+    bmm = BicycleMotionModel()
+    x = np.array([0.]*7)
+    x[5] = 2
+    x[6] = 1
+    x_ = bmm.predict(x, dt=0.1)
+    x[3] = 1
+    x[4] = 0.5
+    x_ = bmm.predict(x, dt=0.1)
+    
+
+def test_Simple_model():
+    bmm = ConstantVelocityModel()
+    x = np.array([0.]*7)
+    x[5] = 2
+    x[6] = 1
+    x_ = bmm.predict(x, dt=0.1)

@@ -3,21 +3,63 @@
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
+import logging
 
 import numpy as np
 from utils import rot_mat_2d, vec2rad, rad_distance
 
 
 # temporary 
-def measurements_process(measurements,state):
-    side_num = estimate_number_of_sides(measurements)
+def get_estimated_rectangular_points(state,measurements):
+    Z = np.array(measurements).reshape(-1,2)
+    side_num = estimate_number_of_sides(Z)
+    rs_obj = init_rectangle(state)
+    estimated_measurements = np.array([])
+
     if side_num == 1:
-        measurements_normalvec_angle(measurements)
+        nvec_rad = measurements_normalvec_angle(Z)
+        idx = rs_obj.find_closest_angle(nvec_rad)
+        estimated_measurements = rs_obj.divide_coords(Z.shape[0],idx)
+
     elif side_num == 2:
-        corner_index, parted_measurements = find_corner_index(measurements)
-        measurements_normalvec_angle(measurements)
+        corner_index, parted_measurements = find_corner_index(Z)
+        for pm in parted_measurements:
+            nvec_rad = measurements_normalvec_angle(pm)
+            idx = rs_obj.find_closest_angle(nvec_rad) # this could be None when nvec_rad is not good
+            em = rs_obj.divide_coords(pm.shape[0],idx)
+            estimated_measurements = np.vstack([estimated_measurements,em]) if estimated_measurements.size else em
+        
+        # When N = 3 (corner is duplicated)
+        if estimated_measurements.shape[0] == Z.shape[0]+1:
+            estimated_measurements = np.delete(estimated_measurements,corner_index, axis=0) # remove duplicated corner
+
+    return estimated_measurements.reshape(-1,1)
 
 
+
+def init_rectangle(state):
+    """
+    Set Rectangle Shape information from state [x, y, vx, vy, theta, l ,w]
+    """
+    rs = RectangleShapePrediction()
+    state = state.reshape(-1)
+    rs.orientation = state[4]
+    rs.center = np.array([state[0], state[1]]).reshape(-1,1)
+    rs.length = state[5]
+    rs.width = state[6]
+    return rs
+
+def init_rectangle_bicycle(state):
+    """
+    Set Rectangle Shape information from state [x, y, v, psi, theta, l ,w]
+    """
+    rs = RectangleShapePrediction()
+    state = state.reshape(-1)
+    rs.orientation = state[3]
+    rs.center = np.array([state[0], state[1]]).reshape(-1,1)
+    rs.length = state[5]
+    rs.width = state[6]
+    return rs
 
 def measurements_normalvec_angle(measurements):
     """calc normal vector angle of the 
@@ -28,8 +70,10 @@ def measurements_normalvec_angle(measurements):
     Returns:
         _type_: angle of z1 -> zn + pi/2
     """
-    p0 = measurements[0] # start
-    pn = measurements[1] # end
+    assert len(measurements) > 1, "measurements num must be larger than 1"
+    Z = np.array(measurements).reshape(-1,2)
+    p0 = Z[0] # start
+    pn = Z[1] # end
     dp = [pn[i] - p0[i] for i in range(2)]
     return vec2rad(dp) + np.pi/2.0
 
@@ -43,11 +87,13 @@ def estimate_number_of_sides(measurements,threshold=25):
     Returns:
         _type_: _description_
     """
-    Nz = len(measurements)
-    if Nz == 1:
+    Z = np.array(measurements).reshape(-1,2)
+    Nz = Z.shape[0]
+
+    if Nz < 3:
+        # This has edge case: when N = 2 and there are only one measurement point in each side 
         N = 1
     else:
-        Z = np.array(measurements).reshape(Nz,2) # to numpy array
         Zbar = np.mean(Z,axis=0)
         Znorm = Z-Zbar
         C = Znorm.T @ Znorm
@@ -96,13 +142,13 @@ def find_corner_index(measurements):
         corner_index : corner index 
         divided indexes: 
     """
-    Nz = len(measurements)
+    measurements = np.array(measurements).reshape(-1,2)
+    Nz = measurements.shape[0]
 
     dmin = 1e5*Nz
     corner_index = None
 
-    if Nz < 3:
-        return corner_index
+    assert Nz> 2, "point num must be larger than 2!"
 
     for n in range(1,Nz-1):
         d, d_a, d_b = 0, 0, 0
@@ -118,11 +164,12 @@ def find_corner_index(measurements):
             d_a_mean = safe_mean(d_a,len(range(1,n)))
             d_b_mean = safe_mean(d_b,len(range(n+1,Nz-1)))
             
-        if d_a_mean < d_b_mean:
-            parted_measurements = [measurements[:n+1], measurements[n+1:]]
-        else:
-            parted_measurements = [measurements[:n], measurements[n:]]
-        
+    if d_a_mean < d_b_mean:
+        parted_measurements = [measurements[:corner_index+1], measurements[corner_index+1:]]
+    elif d_a_mean > d_b_mean:
+        parted_measurements = [measurements[:corner_index], measurements[corner_index:]]
+    else:
+        parted_measurements = [measurements[:corner_index+1], measurements[corner_index:]] # this is happened when N = 3
     return corner_index, parted_measurements
 
 
@@ -148,12 +195,12 @@ class RectangleShapePrediction():
         +---b3--+
 
         Returns:
-            list of normal vector angle : [b1, b2, b3, b4]
+            list of normal vector angle of  [b1, b2, b3, b4] (outside)
         """
-        n_vecs = [self.orientation + np.pi, self.orientation + np.pi/2, self.orientation, self.orientation - np.pi/2]
+        n_vecs = [self.orientation , self.orientation - np.pi/2, self.orientation + np.pi, self.orientation + np.pi/2]
         return n_vecs
     
-    def find_closest_angle(self,angle_rad, threshold=0.5):
+    def find_closest_angle(self,angle_rad, threshold=0.25*np.pi):
         """find closest direction
 
         Args:
@@ -226,14 +273,90 @@ class RectangleShapePrediction():
             coords = center + coords_
         elif indx == 1:
             coords_ = self.get_equally_divided_coords(div_num,self.length,self.width)
-            coords = np.transpose(R90.T @ coords_.T)
+            coords = center + np.transpose(R90.T @ coords_.T)
         elif indx == 2:
             coords_ = self.get_equally_divided_coords(div_num,self.width,self.length)
-            coords = np.transpose(R180 @ coords_.T)
+            coords = center + np.transpose(R180 @ coords_.T)
         elif indx == 3:
             coords_ = self.get_equally_divided_coords(div_num,self.length,self.width)
-            coords = np.transpose(R90 @ coords_.T)
+            coords = center + np.transpose(R90 @ coords_.T)
         else:
+            logging.error("indx: " + str(indx))
             coords =  None
         return coords
     
+
+
+# Vehicle model 1
+class BicycleMotionModel():
+    """state number should be 7 
+        [x, y, v, psi , theta, l, w]
+    """
+    def __init__(self, angle_threshold=1e-8) -> None:
+        self.cscv_boundary_angle = angle_threshold
+        self.v_threshold = angle_threshold # used to avoid zero division in turning radius calc
+
+    def predict(self,x, dt):
+        theta = x[4]
+        v = x[2]
+        if theta < self.cscv_boundary_angle or v < self.v_threshold:
+            x_ = self.predict_cv_model(x,dt)
+            assert np.count_nonzero(np.isnan(x_)) == 0, "x_ is "+str(x_)
+        else:
+            x_ = self.predict_cs_model(x,dt)
+            assert np.count_nonzero(np.isnan(x_)) == 0, "x_ is "+str(x_)
+        return x_
+
+    def predict_cs_model(self, x, dt):
+        v = x[2]
+        psi = x[3]
+        theta = x[4]
+        l = x[5]
+        beta = dt * v/ l * np.tan(theta)
+        TurnR = dt * v/ beta
+        x_ = np.copy(x)
+
+        x_[0] += TurnR * np.sin(psi+beta) - TurnR * np.sin(psi)
+        x_[1] += TurnR * np.cos(psi+beta) +  TurnR * np.cos(psi)
+        x_[3] += beta
+        return x_
+
+    def predict_cv_model(self, x, dt):
+        v = x[2]
+        psi = x[5]
+        Dist = dt * v
+        x_ = np.copy(x)
+
+        x_[0] += Dist * np.cos(psi)
+        x_[1] += Dist * np.sin(psi)
+        x_[3] *= np.exp(-0.5)
+
+        return x_
+
+    def predict_noise_covariance(self, q_acc, q_yawrate, q_shape, dt):
+        qp = dt*dt/2 * q_acc
+        qv = dt * q_acc
+        Q = np.diag([qp, qp, qv, q_yawrate*dt, q_yawrate,q_shape, q_shape])
+        return Q
+    
+
+# Vehicle model 2
+class ConstantVelocityModel():
+    """state number should be 7 
+    [x, y, vx, vy , phi, l, w]
+    """
+    def __init__(self) -> None:
+        pass
+
+    def predict(self, x, dt):
+        A = np.diag([1.]*7)
+        A[0,2] += dt
+        A[1,3] += dt
+
+        return A @ x
+
+    def predict_noise_covariance(self, q_acc, q_angle, q_shape, dt):
+        qp = dt*dt/2 * q_acc
+        qv = dt * q_acc
+        Q = np.diag([qp, qp, qv, qv, q_angle, q_shape, q_shape])
+        return Q

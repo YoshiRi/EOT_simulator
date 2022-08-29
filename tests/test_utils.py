@@ -23,9 +23,45 @@ def test_numerical_grad():
 
 def test_numerical_jacob():
     func = lambda x: x[0]*x[0] + np.cos(x[1])
-    d_func = lambda x: np.array( [2*x[0],-np.sin(x[1])]).reshape(-1,1)
+    d_func = lambda x: np.array( [2*x[0],-np.sin(x[1])]).reshape(1,-1)
     X0 = np.array([1.0,0.5]).reshape(-1,1)
 
     J = numerical_jacob(func,X0)
     assert np.allclose(J,d_func(X0)) 
     
+
+def test_ellipsoid(showflag=False):
+    shape = EllipsoidData()
+    shape.init_with_param([0,0],10,8,30)
+    if showflag:
+        import matplotlib.pyplot as plt
+        plt.figure()
+        shape.plot()
+        plt.xlim([-20,20])
+        plt.ylim([-20,20])
+        plt.grid()
+    
+    Cov=shape.calc_ellipse_matrix(100,64,np.deg2rad(30))
+    shape.init_with_cov([0,0],Cov)
+    if showflag:
+        plt.figure()
+        shape.plot()
+        plt.xlim([-20,20])
+        plt.ylim([-20,20])
+        plt.grid()
+        plt.show()
+
+
+def test_rectangle(showflag=False):
+    shape = RectangleData()
+    shape.center = [0,0]
+    shape.width = 1
+    shape.length = 2
+    shape.orientation = 0.2
+
+    if showflag:
+        plt.figure(1)
+        plt.xlim([-20,20])
+        plt.ylim([-20,20])
+        shape.plot()
+        plt.show()
