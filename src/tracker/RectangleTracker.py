@@ -39,6 +39,18 @@ def get_estimated_rectangular_points(state,measurements):
 
 def init_rectangle(state):
     """
+    Set Rectangle Shape information from state [x, y, vx, vy, theta, l ,w]
+    """
+    rs = RectangleShapePrediction()
+    state = state.reshape(-1)
+    rs.orientation = state[4]
+    rs.center = np.array([state[0], state[1]]).reshape(-1,1)
+    rs.length = state[5]
+    rs.width = state[6]
+    return rs
+
+def init_rectangle_bicycle(state):
+    """
     Set Rectangle Shape information from state [x, y, v, psi, theta, l ,w]
     """
     rs = RectangleShapePrediction()
@@ -280,17 +292,19 @@ class BicycleMotionModel():
     """state number should be 7 
         [x, y, v, psi , theta, l, w]
     """
-    def __init__(self, angle_threshold=1e-9) -> None:
+    def __init__(self, angle_threshold=1e-8) -> None:
         self.cscv_boundary_angle = angle_threshold
         self.v_threshold = angle_threshold # used to avoid zero division in turning radius calc
 
     def predict(self,x, dt):
         theta = x[4]
-        v = x[3]
+        v = x[2]
         if theta < self.cscv_boundary_angle or v < self.v_threshold:
             x_ = self.predict_cv_model(x,dt)
+            assert np.count_nonzero(np.isnan(x_)) == 0, "x_ is "+str(x_)
         else:
             x_ = self.predict_cs_model(x,dt)
+            assert np.count_nonzero(np.isnan(x_)) == 0, "x_ is "+str(x_)
         return x_
 
     def predict_cs_model(self, x, dt):
@@ -335,9 +349,9 @@ class ConstantVelocityModel():
         pass
 
     def predict(self, x, dt):
-        A = np.diag([1]*7)
-        A[0,2] = dt
-        A[1,3] = dt
+        A = np.diag([1.]*7)
+        A[0,2] += dt
+        A[1,3] += dt
 
         return A @ x
 

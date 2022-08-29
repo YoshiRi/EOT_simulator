@@ -9,6 +9,7 @@ Yoshi Ri
 2022/08/18
 """
 
+from ast import Constant
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
@@ -29,6 +30,7 @@ class EKFRectangleTracker(ExtendedKalmanFilter):
         self.set_shape(1,1) # shape should larger than 0
         self.sensor_noise =1e-1
         self.dt = 1e-1
+        self.log = []
 
     def set_sampling_time(self,dt):
         self.dt = dt
@@ -38,11 +40,18 @@ class EKFRectangleTracker(ExtendedKalmanFilter):
         self.x[1] = pose[1]
 
     def set_vel(self,vel):
+        self.x[2] = vel[0]
+        self.x[3] = vel[1]
+
+    def set_vel_bicycle(self,vel):
         self.x[2] = vel
 
     def set_orientation_bicycle(self,orientation, wheel_angle = None):
         self.x[3] = orientation
         self.x[4] = wheel_angle if not wheel_angle is None else 0
+    
+    def set_orientation(self, orientation):
+        self.x[4] = orientation
 
     def set_shape(self,length,width):
         self.x[5] = length
@@ -53,11 +62,17 @@ class EKFRectangleTracker(ExtendedKalmanFilter):
 
     def measurement_process(self, z, dt):
 
-        Qnoise = self.motion_model.predict_noise_covariance(1e2,1e2,1e-1,dt)
+        Qnoise = self.motion_model.predict_noise_covariance(1e2,1e-1,1e-9,dt)
         x_, P_ = self.predict_nonlinear(self.motion_model.predict, Qnoise, dt=dt)
         
         # reshape measurement as row vector
         measurements = np.array(z).reshape(-1,1)
+
+        # show estimation
+        estimated_measurements = get_estimated_rectangular_points(self.x, measurements).reshape(-1,2)
+        import matplotlib.pyplot as plt
+        plt.plot(estimated_measurements[:,0], estimated_measurements[:,1],'o')
+        #plt.show()
 
         if len(z) > 0:
             Rnoise = np.diag([self.sensor_noise]*len(z)*2)
@@ -91,22 +106,45 @@ class EKFRectangleTracker(ExtendedKalmanFilter):
         shape.width = self.x[6]
         shape.orientation = self.x[4]
         ids = np.arange(0, len(ox))
+
+        self.log.append([self.x, self.P])
         return [shape], [ids]
 
+
+    def __del__(self):
+        import matplotlib.pyplot as plt
+        plt.figure(2)
+        x = [log[0][0] for log in self.log]
+        t = np.arange(len(x))
+        y = [log[0][1] for log in self.log]
+        v = [log[0][2] for log in self.log]
+        cta = [log[0][3] for log in self.log]
+        beta = [log[0][4] for log in self.log]
+        l = [log[0][5] for log in self.log]
+        w = [log[0][6] for log in self.log]
+        plt.plot(t,x,t,y)
+        plt.legend(["x","y"])
+        plt.figure(3)
+        plt.plot(t,v,t,cta,t,beta)
+        plt.legend(["vx","vy","orientation","handle angle"])
+        plt.figure(4)
+        plt.plot(t,l,t,w)
+        plt.legend(["len","wid"])
+        plt.show()
 
 
 def senario1():
     sim = PerceptionSimulator(dt=0.1)
-    v1 = VehicleSimulator(-10.0, 0.0, np.deg2rad(90.0),
+    v1 = VehicleSimulator(-10.0, 10.0, np.deg2rad(90.0),
                           0.0, 50.0 / 3.6, 3.0, 5.0)
 
     sim.append_vehicle(v1)
 
     tracker = EKFRectangleTracker()
     tracker.set_model()
-    tracker.set_shape(5,3)
-    tracker.set_pos([-10,0])
-    tracker.set_orientation_bicycle(np.pi/2)
+    tracker.set_shape(5,2)
+    tracker.set_pos([-10,10])
+    tracker.set_orientation(np.pi/2)
 
     sim.run(tracker)
     print("Done")
