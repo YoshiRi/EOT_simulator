@@ -78,7 +78,8 @@ def estimate_number_of_sides(measurements,threshold=25):
     Z = np.array(measurements).reshape(-1,2)
     Nz = Z.shape[0]
 
-    if Nz == 1:
+    if Nz < 3:
+        # This has edge case: when N = 2 and there are only one measurement point in each side 
         N = 1
     else:
         Zbar = np.mean(Z,axis=0)
