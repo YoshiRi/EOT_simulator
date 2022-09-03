@@ -26,6 +26,15 @@ def test_point2line_distance():
     z2 = [1,0]
     z3 = [2,6]
     assert point2line_distance(z1,z2,z3) == 6
+    z1 = [3,2]
+    z2 = [1,0]
+    z3 = [3,0]
+    assert np.allclose(point2line_distance(z1,z2,z3),np.sqrt(2)) 
+    z1 = [0,0]
+    z2 = [2,0]
+    z3 = [1,0]
+    assert np.allclose(point2line_distance(z1,z2,z3),0) # zero division
+
 
 def test_find_corner_index():
     z_1 = [[0,1],[0,0],[1,0],[2,0],[3,0]]

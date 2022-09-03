@@ -70,10 +70,11 @@ class EKFRectangleTracker(ExtendedKalmanFilter):
         measurements = np.array(z).reshape(-1,1)
 
         # show estimation
-        #estimated_measurements = get_estimated_rectangular_points(self.x, measurements).reshape(-1,2)
-        estimated_measurements = calc_rectangle_counter(x_, measurements).reshape(-1,2)
         import matplotlib.pyplot as plt
         plt.plot(measurements.reshape(-1,2)[:,0], measurements.reshape(-1,2)[:,1],'x')
+
+        #estimated_measurements = get_estimated_rectangular_points(self.x, measurements).reshape(-1,2)
+        estimated_measurements = calc_rectangle_counter(x_, measurements).reshape(-1,2)
         plt.plot(estimated_measurements[:,0], estimated_measurements[:,1],'ko')
         #plt.show()
 
@@ -322,7 +323,7 @@ def senario2():
 
     tracker = EKFRectangleTracker()
     tracker.set_model()
-    tracker.set_shape(6,4)
+    tracker.set_shape(5,3)
     tracker.set_pos([-10,30])
     tracker.set_orientation(np.pi/2)
 
@@ -334,12 +335,12 @@ def senario3():
     sim = PerceptionSimulator(dt=0.1)
     v1 = VehicleSimulator(-10.0, 0.0, np.deg2rad(90.0),
                           0.0, 50.0 / 3.6, 3.0, 5.0)
-    vref = [0.1, 0.1]
+    vref = [0.1, 0.02]
     sim.append_vehicle(v1,vref)
 
     tracker = EKFRectangleTracker()
     tracker.set_model()
-    tracker.set_shape(6,4)
+    tracker.set_shape(5,3)
     tracker.set_pos([-10,0])
     tracker.set_orientation(np.pi/2)
 
