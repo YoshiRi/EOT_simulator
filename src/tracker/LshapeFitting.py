@@ -220,5 +220,18 @@ def senario1():
     print("Done")
 
 
+
+def senario3():
+    sim = PerceptionSimulator(dt=0.1)
+    v1 = VehicleSimulator(-10.0, 0.0, np.deg2rad(90.0),
+                          0.0, 50.0 / 3.6, 3.0, 5.0)
+    vref = [0.1, 0.02]
+    sim.append_vehicle(v1,vref)
+
+    tracker = LShapeFitting()
+
+    sim.run(tracker)
+    print("Done")
+
 if __name__=="__main__":
-    senario1()
+    senario3()
