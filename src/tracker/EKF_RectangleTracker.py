@@ -16,12 +16,12 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 
 import numpy as np
-from utils import RectangleData
+from utils import RectangleData, rad_distance
 from EKF import ExtendedKalmanFilter
 from RectangleTracker import *
 
 from simulator import PerceptionSimulator, VehicleSimulator
-
+from src.tracker.LshapeFitting import LShapeFitting
 
 class EKFRectangleTracker(ExtendedKalmanFilter):
     def __init__(self) -> None:
@@ -69,6 +69,9 @@ class EKFRectangleTracker(ExtendedKalmanFilter):
         # reshape measurement as row vector
         measurements = np.array(z).reshape(-1,1)
 
+        # Pre calc orientation
+        x_, P_ = self.orientation_correct(x_,P_,measurements)
+
         # show estimation
         import matplotlib.pyplot as plt
         plt.plot(measurements.reshape(-1,2)[:,0], measurements.reshape(-1,2)[:,1],'x')
@@ -87,7 +90,15 @@ class EKFRectangleTracker(ExtendedKalmanFilter):
             self.x = x_
             self.P = P_
 
-    
+    def orientation_correct(self, x_, P_, measurements):
+
+        z_ori = precalc_orientation(x_[4], measurements)
+        Cmat = np.array([0,0,0,0,1,0,0]).reshape(1,-1) # measurement matrix for rotation
+        R = np.diag([0.1])
+        self.update_linear(x_,P_,Cmat,z_ori,R)
+
+        return self.x, self.P
+
     def fitting(self,ox,oy):
         """This function is needed to run simulation 
 
@@ -139,6 +150,28 @@ class EKFRectangleTracker(ExtendedKalmanFilter):
         plt.show()
 
 
+def get_orientation_from_rect(rect):
+    psi = np.arctan2(rect.b[0], rect.a[0])
+    return [psi, psi+np.pi/2, psi+np.pi, psi-np.pi/2]
+
+def precalc_orientation(psi_, measurements):
+    """ Calc orientation from LShapeFitting and current orientation
+    Args:
+        psi_ (float): current estimated orientation
+        measurements (list of list): measurement vector
+
+    Returns:
+        _type_: LShapeFitting based orientation
+    """
+    Z = np.array(measurements).reshape(-1,2)
+    lf = LShapeFitting()
+    rects, ids = lf.fitting(Z[:,0],Z[:,1])
+    for r in rects:
+        angles = get_orientation_from_rect(r)
+        for psi in angles:
+            if rad_distance(psi, psi_) <= np.pi/4:
+                return psi
+        return psi_
 
 
 # calc analitical jacob
@@ -191,6 +224,8 @@ class calcRectangleCounter(RectangleShapePrediction):
             J[:,5] *= 0      ## disable length update
         else:                # side observation
             J[:,6] *= 0      ## disable width update
+        
+        J[:,4] *= 0 # disable angle update
         return J
 
     def calc_JacobH_part(self, parted_z):
