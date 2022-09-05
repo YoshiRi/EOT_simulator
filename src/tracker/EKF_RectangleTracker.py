@@ -81,8 +81,8 @@ class EKFRectangleTracker(ExtendedKalmanFilter):
         if len(z) > 0:
             Rnoise = np.diag([self.sensor_noise]*len(z)*2)
             #self.update_nonlinear(x_, P_, get_estimated_rectangular_points,measurements, Rnoise, measurements=measurements)
-            self.update_nonlinear(x_, P_, calc_rectangle_counter, measurements, Rnoise,  measurements=measurements)
-            
+            #self.update_nonlinear(x_, P_, calc_rectangle_counter, measurements, Rnoise,  measurements=measurements) # use numerical jacob
+            self.update_nonlinear(x_, P_, calc_rectangle_counter, measurements, Rnoise, H_jacob = calc_jacob, measurements=measurements) # use analitical jacob
         else:
             self.x = x_
             self.P = P_
@@ -141,11 +141,20 @@ class EKFRectangleTracker(ExtendedKalmanFilter):
 
 
 
+# calc analitical jacob
+def calc_jacob(x, measurements):
+    obj = calcRectangleCounter()
+    obj.init_from_constant_velocity_model_state(x)
+    JH = obj.calc_JacobH(measurements)
+    return JH 
+
+# with numerical jacob
 def calc_rectangle_counter(x, measurements):
     obj = calcRectangleCounter()
     obj.init_from_constant_velocity_model_state(x)
     z_est = obj.calc_measurement_points(measurements)
     return z_est 
+
 
 class calcRectangleCounter(RectangleShapePrediction):
     def __init__(self) -> None:
@@ -197,7 +206,8 @@ class calcRectangleCounter(RectangleShapePrediction):
         Nz = pz.shape[0]
         for i in range(Nz):
             S = self.calcS(idx, i, Nz)
-            J_Hn = np.hstack([np.eye(2), dR @ S @ lwvec, np.zeros((2,1)), R @ S ])
+            # J_Hn = np.hstack([np.eye(2), np.zeros((2,1)), dR @ S @ lwvec, np.zeros((2,1)), R @ S ]) # for bicycle model state
+            J_Hn = np.hstack([np.eye(2), np.zeros((2,2)), dR @ S @ lwvec, R @ S ]) # constant velocity model state
 
             J_H = np.vstack([J_H, J_Hn]) if J_H.shape[0] else J_Hn
         return J_H
