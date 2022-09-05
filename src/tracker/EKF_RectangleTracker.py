@@ -63,7 +63,7 @@ class EKFRectangleTracker(ExtendedKalmanFilter):
 
     def measurement_process(self, z, dt):
 
-        Qnoise = self.motion_model.predict_noise_covariance(1e2,1e-1,1e-9,dt) #pos(acc) cov, rot cov, shape cov
+        Qnoise = self.motion_model.predict_noise_covariance(1e2,1e-1,1e-12,dt) #pos(acc) cov, rot cov, shape cov
         x_, P_ = self.predict_nonlinear(self.motion_model.predict, Qnoise, dt=dt)
         
         # reshape measurement as row vector
