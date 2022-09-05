@@ -185,6 +185,14 @@ class calcRectangleCounter(RectangleShapePrediction):
         dR = np.array([-np.sin(rad), -np.cos(rad), np.cos(rad), -np.sin(rad)]).reshape(2,2)
         return dR
 
+    def set_no_update_for_unobserved_shape(self, idx, J):
+        """ Disable shape update with unobserved direction """
+        if idx == 0 or idx == 2: # front or rear observation
+            J[:,5] *= 0      ## disable length update
+        else:                # side observation
+            J[:,6] *= 0      ## disable width update
+        return J
+
     def calc_JacobH_part(self, parted_z):
         """Calc jacobian from measurements set z
 
@@ -210,6 +218,8 @@ class calcRectangleCounter(RectangleShapePrediction):
             J_Hn = np.hstack([np.eye(2), np.zeros((2,2)), dR @ S @ lwvec, R @ S ]) # constant velocity model state
 
             J_H = np.vstack([J_H, J_Hn]) if J_H.shape[0] else J_Hn
+        
+        J_H = self.set_no_update_for_unobserved_shape(idx, J_H)
         return J_H
 
     def calc_JacobH(self, measurement):
