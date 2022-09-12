@@ -370,7 +370,7 @@ def senario1():
     print("Done")
 
 def senario2():
-    sim = PerceptionSimulator(dt=0.1)
+    sim = PerceptionSimulator(dt=0.1,angle_resolution_deg=0.5)
     v1 = VehicleSimulator(-10.0, 30.0, np.deg2rad(90.0),
                           0.0, 50.0 / 3.6, 3.0, 5.0)
     vref = [-0.1, 0]
@@ -387,8 +387,8 @@ def senario2():
 
 
 def senario3():
-    sim = PerceptionSimulator(dt=0.1)
-    v1 = VehicleSimulator(-10.0, 0.0, np.deg2rad(90.0),
+    sim = PerceptionSimulator(dt=0.1, angle_resolution_deg=0.5)
+    v1 = VehicleSimulator(-20.0, 10.0, np.deg2rad(90.0),
                           0.0, 50.0 / 3.6, 3.0, 5.0)
     vref = [0.1, 0.02]
     sim.append_vehicle(v1,vref)
@@ -396,7 +396,7 @@ def senario3():
     tracker = EKFRectangleTracker()
     tracker.set_model()
     tracker.set_shape(5,3)
-    tracker.set_pos([-10,0])
+    tracker.set_pos([-20,10])
     tracker.set_orientation(np.pi/2)
 
     sim.run(tracker)
