@@ -1,10 +1,10 @@
 from random import sample
 from this import d
 import pytest
-from src.EKF import ExtendedKalmanFilter
+from eot_simulator.EKF import ExtendedKalmanFilter
 import numpy as np
 
-from src.utils import rot_mat_2d
+from eot_simulator.utils import rot_mat_2d
 
 def test_EKF():
     ekf = ExtendedKalmanFilter()

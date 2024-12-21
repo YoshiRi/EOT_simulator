@@ -1,5 +1,5 @@
 import pytest
-from src.utils import * 
+from eot_simulator.utils import * 
 
 def test_rot_mat_2d():
     vec = np.array([3,4]).reshape(-1,1)

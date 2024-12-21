@@ -10,7 +10,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 
 from copy import deepcopy
 import numpy as np
-from src.utils import numerical_jacob, numerical_grad
+from eot_simulator.utils import numerical_jacob, numerical_grad
 
 
 class ExtendedKalmanFilter():

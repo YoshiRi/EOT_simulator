@@ -1,5 +1,5 @@
 import pytest
-from src.tracker.RectangleTracker import *
+from eot_simulator.tracker.RectangleTracker import *
 
 
 def test_get_estimated_rectangular_points():

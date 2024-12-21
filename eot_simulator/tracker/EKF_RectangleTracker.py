@@ -21,7 +21,7 @@ from EKF import ExtendedKalmanFilter
 from RectangleTracker import *
 
 from simulator import PerceptionSimulator, VehicleSimulator
-from src.tracker.LshapeFitting import LShapeFitting
+from eot_simulator.tracker.LshapeFitting import LShapeFitting
 
 class EKFRectangleTracker(ExtendedKalmanFilter):
     def __init__(self) -> None:
