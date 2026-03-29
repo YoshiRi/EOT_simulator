@@ -15,13 +15,6 @@ yoshi.ri@tier4.jp
 """
 
 
-from pyexpat.errors import XML_ERROR_CANT_CHANGE_FEATURE_ONCE_PARSING
-from re import X
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
-
-
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 import matplotlib.transforms as transforms
@@ -30,7 +23,7 @@ import numpy as np
 import itertools
 from enum import Enum
 
-from simulator import PerceptionSimulator, VehicleSimulator, LidarSimulator
+from src.simulator import PerceptionSimulator, VehicleSimulator, LidarSimulator
 
 LIDAR_NOISE_SIGMA = 0.01
 

@@ -9,18 +9,12 @@ Yoshi Ri
 2022/08/18
 """
 
-from ast import Constant
-from selectors import EpollSelector
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
-
 import numpy as np
-from utils import RectangleData, rad_distance
-from EKF import ExtendedKalmanFilter
-from RectangleTracker import *
+from src.utils import RectangleData, rad_distance
+from src.EKF import ExtendedKalmanFilter
+from src.tracker.RectangleTracker import *
 
-from simulator import PerceptionSimulator, VehicleSimulator
+from src.simulator import PerceptionSimulator, VehicleSimulator
 from src.tracker.LshapeFitting import LShapeFitting
 
 class EKFRectangleTracker(ExtendedKalmanFilter):

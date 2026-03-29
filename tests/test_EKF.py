@@ -1,5 +1,3 @@
-from random import sample
-from this import d
 import pytest
 from src.EKF import ExtendedKalmanFilter
 import numpy as np

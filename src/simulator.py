@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import math
 import random
 
-from utils import rot_mat_2d
+from src.utils import rot_mat_2d
 
 
 LIDAR_NOISE_SIGMA = 0.01
