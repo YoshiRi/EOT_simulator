@@ -1,12 +1,9 @@
 """Basic functions Rectangle Tracker Utility
 """
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 import logging
 
 import numpy as np
-from utils import rot_mat_2d, vec2rad, rad_distance
+from src.utils import rot_mat_2d, vec2rad, rad_distance
 
 
 # temporary 

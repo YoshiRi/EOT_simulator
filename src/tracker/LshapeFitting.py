@@ -12,18 +12,13 @@ efficient-l-shape-fitting-for-vehicle-detection-using-laser-scanners/
 
 """
 
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
-
-
 import matplotlib.pyplot as plt
 import numpy as np
 import itertools
 from enum import Enum
 
-from utils import rot_mat_2d
-from simulator import PerceptionSimulator, VehicleSimulator
+from src.utils import rot_mat_2d
+from src.simulator import PerceptionSimulator, VehicleSimulator
 
 show_animation = True
 
