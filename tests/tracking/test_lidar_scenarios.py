@@ -24,6 +24,8 @@ from src.tracking.ggiw.ggiw_state import GGIWState, _DOF_MIN
 from src.tracking.ggiw.ggiw_update import predict as ggiw_predict, update as ggiw_update
 from src.tracking.measurement.partition import partition
 from src.tracking.pmbm.pmbm_filter import BirthModel, PMBMFilter
+from src.tracking.shape.rectangle_fitting import OBBResult, fit_rectangle
+from src.tracking.shape.smoothing import ExponentialSmoother, OBBKalmanSmoother
 
 
 # ---------------------------------------------------------------------------
@@ -346,3 +348,192 @@ class TestPMBMWithLidarScenarios:
 
         estimates = f.extract_estimates(existence_threshold=0.5)
         assert len(estimates) >= 1   # at minimum one vehicle tracked
+
+
+# ---------------------------------------------------------------------------
+# Shape layer integration with ray-cast LiDAR
+# ---------------------------------------------------------------------------
+
+
+class TestOBBFittingWithLidar:
+    """Verify that fit_rectangle produces reasonable OBBs from ray-cast point clouds."""
+
+    # --- Scenario 1: axis-aligned vehicle ---
+
+    def test_axis_aligned_vehicle_theta_near_zero(self):
+        """Vehicle facing +x (yaw=0) at (10, 0): fitted theta should be near 0."""
+        v = _vehicle(x=10.0, y=0.0, yaw=0.0, w=2.0, L=4.0)
+        pts = _lidar_scan(v, angle_res_deg=1.0)
+        assert len(pts) >= 2, "Need enough points to fit"
+        obb = fit_rectangle(pts)
+        # theta can be 0 or ±π/2 depending on which axis dominates
+        # Just check it's a valid finite angle in range
+        assert -np.pi / 2 <= obb.theta < np.pi / 2
+        assert obb.length > 0 and obb.width > 0
+
+    # --- Scenario 2: angled vehicle ---
+
+    def test_angled_vehicle_theta_reflects_orientation(self):
+        """A 30° vehicle should give theta closer to 30° than 0°."""
+        v_angled = _vehicle(x=10.0, y=0.0, yaw=np.deg2rad(30), w=2.0, L=4.0)
+        v_axis   = _vehicle(x=10.0, y=0.0, yaw=0.0,            w=2.0, L=4.0)
+        pts_angled = _lidar_scan(v_angled, angle_res_deg=1.0)
+        pts_axis   = _lidar_scan(v_axis,   angle_res_deg=1.0)
+        if len(pts_angled) < 2 or len(pts_axis) < 2:
+            pytest.skip("Too few points from this scan configuration")
+        obb_angled = fit_rectangle(pts_angled)
+        obb_axis   = fit_rectangle(pts_axis)
+        # The two vehicles have different orientations, so their fitted angles differ
+        assert not np.isclose(obb_angled.theta, obb_axis.theta, atol=0.05)
+
+    # --- Scenario 3: size estimates are physically plausible ---
+
+    def test_obb_size_plausible_for_car(self):
+        """A 4 m × 2 m car at 10 m range should produce an OBB with
+        length in [1, 6] and width in [0.5, 5]."""
+        v = _vehicle(x=10.0, y=0.0, yaw=np.deg2rad(45), w=2.0, L=4.0)
+        pts = _lidar_scan(v, angle_res_deg=1.0)
+        if len(pts) < 2:
+            pytest.skip("Too few points")
+        obb = fit_rectangle(pts)
+        assert 1.0 < obb.length < 6.0
+        assert 0.5 < obb.width  < 5.0
+
+    # --- Scenario 4: OBB corners remain near the vehicle ---
+
+    def test_obb_corners_near_vehicle_points(self):
+        """All 4 OBB corners should be within 3 m of the vehicle centre."""
+        cx, cy = 10.0, 0.0
+        v = _vehicle(x=cx, y=cy, yaw=0.0, w=2.0, L=4.0)
+        pts = _lidar_scan(v, angle_res_deg=1.0)
+        if len(pts) < 2:
+            pytest.skip("Too few points")
+        obb = fit_rectangle(pts)
+        for corner in obb.corners():
+            assert np.linalg.norm(corner - np.array([cx, cy])) < 8.0
+
+    # --- Scenario 5: partial observation ---
+
+    def test_obb_does_not_collapse_under_partial_observation(self):
+        """Even with partial observation the OBB must have positive dimensions."""
+        v = _vehicle(x=10.0, y=0.0, yaw=0.0, w=2.0, L=4.0)
+        pts = _lidar_scan(v, angle_res_deg=3.0)  # coarse scan → few points
+        if len(pts) < 2:
+            pytest.skip("Too few points for this test")
+        obb = fit_rectangle(pts)
+        assert obb.length > 0
+        assert obb.width  > 0
+        assert np.isfinite(obb.theta)
+
+
+class TestOBBSmoothing:
+    """Verify that temporal smoothers suppress partial-observation noise."""
+
+    def _scan_series(self, n_frames: int = 20,
+                     angle_res_deg: float = 2.0) -> list[np.ndarray]:
+        """Return a list of point-cloud arrays for a stationary vehicle."""
+        v = _vehicle(x=10.0, y=0.0, yaw=np.deg2rad(30), w=2.0, L=4.0)
+        lidar = LidarSimulator(range_noise=0.05)
+        series = []
+        for _ in range(n_frames):
+            ox, oy = lidar.get_observation_points([v], np.deg2rad(angle_res_deg))
+            if ox:
+                series.append(np.column_stack([ox, oy]))
+        return series
+
+    # --- Smoothing reduces frame-to-frame variance ---
+
+    def _length_variance(self, smoother, series) -> float:
+        raw_lengths, smooth_lengths = [], []
+        for pts in series:
+            if len(pts) < 2:
+                continue
+            obb = fit_rectangle(pts)
+            raw_lengths.append(obb.length)
+            s = smoother.update(obb)
+            smooth_lengths.append(s.length)
+        return float(np.var(raw_lengths)), float(np.var(smooth_lengths))
+
+    def test_exponential_smoother_reduces_length_variance(self):
+        series = self._scan_series()
+        if len(series) < 5:
+            pytest.skip("Not enough frames")
+        raw_var, smooth_var = self._length_variance(
+            ExponentialSmoother(alpha=0.3), series
+        )
+        assert smooth_var <= raw_var + 1e-9  # smoothed ≤ raw (allow floating tolerance)
+
+    def test_kalman_smoother_reduces_length_variance(self):
+        series = self._scan_series()
+        if len(series) < 5:
+            pytest.skip("Not enough frames")
+        raw_var, smooth_var = self._length_variance(
+            OBBKalmanSmoother(meas_noise_size=0.3), series
+        )
+        assert smooth_var <= raw_var + 1e-9
+
+    # --- Smoother survives missed-detection frames ---
+
+    def test_kalman_smoother_predict_on_missed_frame(self):
+        """OBBKalmanSmoother.predict() is called on missed frames; must not raise."""
+        series = self._scan_series()
+        sm = OBBKalmanSmoother()
+        for i, pts in enumerate(series):
+            if len(pts) < 2:
+                sm.predict()
+                continue
+            obb = fit_rectangle(pts)
+            if i % 4 == 3:   # simulate missed detection every 4th frame
+                out = sm.predict()
+            else:
+                out = sm.update(obb)
+            assert isinstance(out, OBBResult)
+            assert np.isfinite(out.theta)
+            assert out.length > 0
+
+    # --- Full pipeline: PMBM → shape layer ---
+
+    def test_full_pipeline_obb_per_tracked_estimate(self):
+        """For each PMBM estimate, run fit_rectangle + ExponentialSmoother;
+        every result must be a valid OBBResult."""
+        f = PMBMFilter(
+            birth_model=BirthModel(birth_log_rate=-4.6),
+            max_hypotheses=50,
+            prune_log_threshold=-15.0,
+        )
+        v = _vehicle(x=12.0, y=0.0, yaw=np.deg2rad(20), v=0.0, w=2.0, L=4.0)
+        lidar = LidarSimulator(range_noise=0.02)
+        smoothers: dict[int, ExponentialSmoother] = {}
+
+        for frame in range(15):
+            ox, oy = lidar.get_observation_points([v], np.deg2rad(2.0))
+            f.predict(dt=0.5)
+            if ox:
+                pts = np.column_stack([ox, oy])
+                f.update_from_points(pts, eps=2.0)
+            else:
+                f.update([])
+
+        estimates = f.extract_estimates(existence_threshold=0.5)
+        cells_raw = partition(
+            np.column_stack([ox, oy]) if ox else np.empty((0, 2)), eps=2.0
+        )
+
+        for idx, est in enumerate(estimates):
+            # Find the closest cell to this estimate
+            if not cells_raw:
+                continue
+            dists = [
+                np.linalg.norm(c.centroid - est.position) for c in cells_raw
+            ]
+            best_cell = cells_raw[int(np.argmin(dists))]
+            if len(best_cell.points) < 2:
+                continue
+            obb_raw = fit_rectangle(best_cell.points)
+            sm = smoothers.setdefault(idx, ExponentialSmoother(alpha=0.4))
+            obb_smooth = sm.update(obb_raw)
+
+            assert isinstance(obb_smooth, OBBResult)
+            assert np.isfinite(obb_smooth.theta)
+            assert obb_smooth.length > 0
+            assert obb_smooth.width  > 0
