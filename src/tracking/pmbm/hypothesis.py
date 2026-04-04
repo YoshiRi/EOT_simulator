@@ -17,19 +17,36 @@ it computationally tractable.
 
 After enumeration, hypotheses are pruned by a log-weight threshold and
 capped at a maximum count to prevent combinatorial explosion.
+
+PPP interface
+-------------
+The ``update_hypothesis`` function now accepts a ``PPP`` object (see
+``ppp.py``) instead of a ``birth_fn / birth_log_rate`` pair.  The PPP
+provides:
+
+* ``detection_log_likelihood(cell, p_d)`` – replaces the flat
+  ``birth_log_rate`` constant; computed from the full PPP mixture.
+* ``detection_posterior(cell, p_d)``      – replaces ``birth_fn(cell)``;
+  returns a Bernoulli with r and state derived from the PPP posterior.
+
+Both methods are read-only – the PPP state is mutated later by
+``ppp.undetected_update()``, after the enumeration loop completes.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from itertools import product as iproduct
-from typing import Callable
+from typing import TYPE_CHECKING
 
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
 from .bernoulli import Bernoulli
 from src.tracking.measurement.clustering import MeasurementCell
+
+if TYPE_CHECKING:
+    from .ppp import PPP
 
 # Max N or M before falling back to MAP-only
 _ENUM_LIMIT = 7
@@ -67,8 +84,7 @@ def update_hypothesis(
     hyp: GlobalHypothesis,
     cells: list[MeasurementCell],
     p_detection: float,
-    birth_fn: Callable[[MeasurementCell], Bernoulli],
-    birth_log_rate: float = -2.3,
+    ppp: "PPP",
     max_hypotheses: int = 100,
     prune_log_threshold: float = -15.0,
 ) -> list[GlobalHypothesis]:
@@ -78,8 +94,8 @@ def update_hypothesis(
         hyp:                 Predicted GlobalHypothesis.
         cells:               Measurement cells from this time step.
         p_detection:         Probability of detecting a target given it exists.
-        birth_fn:            Factory that creates a new Bernoulli from an
-                             unassigned cell (represents PPP birth).
+        ppp:                 PPP intensity (read-only during this call).
+                             Provides per-cell birth likelihoods and posteriors.
         max_hypotheses:      Hard cap on the number of hypotheses returned.
         prune_log_threshold: Discard hypotheses whose log-weight is below
                              this value (relative to the current hypothesis).
@@ -94,9 +110,9 @@ def update_hypothesis(
         return [_all_missed(hyp, p_detection)]
 
     if N <= _ENUM_LIMIT and M <= _ENUM_LIMIT:
-        return _enumerate(hyp, cells, p_detection, birth_fn, birth_log_rate,
+        return _enumerate(hyp, cells, p_detection, ppp,
                           max_hypotheses, prune_log_threshold)
-    return _map_only(hyp, cells, p_detection, birth_fn, birth_log_rate)
+    return _map_only(hyp, cells, p_detection, ppp)
 
 
 # ---------------------------------------------------------------------------
@@ -107,8 +123,7 @@ def _enumerate(
     hyp: GlobalHypothesis,
     cells: list[MeasurementCell],
     p_detection: float,
-    birth_fn: Callable[[MeasurementCell], Bernoulli],
-    birth_log_rate: float,
+    ppp: "PPP",
     max_hypotheses: int,
     prune_log_threshold: float,
 ) -> list[GlobalHypothesis]:
@@ -131,7 +146,9 @@ def _enumerate(
         miss_bern[i] = b
         miss_lw[i] = lw
 
-    birth_bern = [birth_fn(cell) for cell in cells]
+    # PPP: per-cell birth Bernoullis and log-weight contributions
+    birth_bern = [ppp.detection_posterior(cell, p_detection) for cell in cells]
+    birth_lw   = [ppp.detection_log_likelihood(cell, p_detection) for cell in cells]
 
     # Threshold relative to base weight
     abs_threshold = hyp.log_weight + prune_log_threshold
@@ -139,7 +156,7 @@ def _enumerate(
     new_hypotheses: list[GlobalHypothesis] = []
 
     # assignment[j] ∈ {0..N-1}: cell j → track assignment[j]
-    # assignment[j] = N:         cell j → birth
+    # assignment[j] = N:         cell j → birth (PPP)
     for assignment in iproduct(range(N + 1), repeat=M):
         # Validate: each track used at most once
         track_used = [False] * N
@@ -158,8 +175,8 @@ def _enumerate(
         for j, a in enumerate(assignment):
             if a < N:
                 log_w += det_lw[a][j]
-            else:  # birth — penalise by log expected new-target rate
-                log_w += birth_log_rate
+            else:  # birth — PPP detection intensity at this cell
+                log_w += birth_lw[j]
         for i in range(N):
             if not track_used[i]:
                 log_w += miss_lw[i]
@@ -210,8 +227,7 @@ def _map_only(
     hyp: GlobalHypothesis,
     cells: list[MeasurementCell],
     p_detection: float,
-    birth_fn: Callable[[MeasurementCell], Bernoulli],
-    birth_log_rate: float = -2.3,
+    ppp: "PPP",
 ) -> list[GlobalHypothesis]:
     """Return a single MAP-assignment hypothesis via Hungarian algorithm."""
     N = len(hyp.tracks)
@@ -233,8 +249,10 @@ def _map_only(
         _, lw = track.missed_update(p_detection)
         cost[i, M:M + N] = -lw
 
-    # Birth: dummy row → cell j (penalise by birth_log_rate)
-    cost[N:, :M] = -birth_log_rate
+    # Birth: dummy row → cell j; cost from PPP detection log-likelihood
+    for j, cell in enumerate(cells):
+        birth_lw = ppp.detection_log_likelihood(cell, p_detection)
+        cost[N:, j] = -birth_lw
 
     row_ind, col_ind = linear_sum_assignment(cost)
 
@@ -253,8 +271,9 @@ def _map_only(
             tracks_new[r] = b
             log_w += lw
             assigned[r] = True
-        elif c < M:                     # birth → cell
-            tracks_new.append(birth_fn(cells[c]))
+        elif c < M:                     # birth → cell (PPP posterior)
+            tracks_new.append(ppp.detection_posterior(cells[c], p_detection))
+            log_w += ppp.detection_log_likelihood(cells[c], p_detection)
 
     # Any track not yet processed
     for i in range(N):

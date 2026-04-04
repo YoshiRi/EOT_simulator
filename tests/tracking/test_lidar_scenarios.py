@@ -228,7 +228,7 @@ class TestPMBMWithLidarScenarios:
         defaults = dict(
             p_survival=0.99,
             p_detection=0.9,
-            birth_model=BirthModel(r_birth=0.3, birth_log_rate=-4.6, vel_var=1e2),
+            birth_model=BirthModel(birth_weight=0.01, vel_var=1e2),
             max_hypotheses=30,
             prune_log_threshold=-30.0,
         )
@@ -497,7 +497,7 @@ class TestOBBSmoothing:
         """For each PMBM estimate, run fit_rectangle + ExponentialSmoother;
         every result must be a valid OBBResult."""
         f = PMBMFilter(
-            birth_model=BirthModel(birth_log_rate=-4.6),
+            birth_model=BirthModel(birth_weight=0.01),
             max_hypotheses=50,
             prune_log_threshold=-15.0,
         )
