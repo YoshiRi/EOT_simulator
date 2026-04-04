@@ -14,6 +14,7 @@ from src.tracking.pmbm.hypothesis import (
     update_hypothesis,
 )
 from src.tracking.pmbm.pmbm_filter import BirthModel, PMBMFilter
+from src.tracking.pmbm.ppp import PPP, PPPComponent
 
 
 # ---------------------------------------------------------------------------
@@ -35,6 +36,17 @@ def _make_cell(center=(0.0, 0.0), n=4, spread=0.2, seed=0) -> MeasurementCell:
     rng = np.random.default_rng(seed)
     pts = np.array(center) + rng.standard_normal((n, 2)) * spread
     return MeasurementCell(pts)
+
+
+def _make_ppp(centers=None, weight=0.01) -> PPP:
+    """Build a PPP with one component per centre, or empty if none given."""
+    if not centers:
+        return PPP()
+    components = []
+    for cx, cy in centers:
+        state = _make_state((cx, cy))
+        components.append(PPPComponent(weight=weight, state=state))
+    return PPP(components=components)
 
 
 # ---------------------------------------------------------------------------
@@ -101,8 +113,8 @@ class TestGlobalHypothesis:
     def test_update_empty_cells_returns_all_missed(self):
         tracks = [Bernoulli(r=0.9, state=_make_state())]
         hyp = GlobalHypothesis(log_weight=0.0, tracks=tracks)
-        birth = BirthModel()
-        results = update_hypothesis(hyp, [], 0.9, birth.new_bernoulli)
+        ppp = _make_ppp()
+        results = update_hypothesis(hyp, [], 0.9, ppp)
         assert len(results) == 1
         assert results[0].tracks[0].r < 0.9  # missed → r decreased
 
@@ -110,15 +122,15 @@ class TestGlobalHypothesis:
         track = Bernoulli(r=0.8, state=_make_state())
         hyp = GlobalHypothesis(log_weight=0.0, tracks=[track])
         cell = _make_cell(center=(0.0, 0.0))
-        birth = BirthModel()
-        results = update_hypothesis(hyp, [cell], 0.9, birth.new_bernoulli)
+        ppp = _make_ppp([(0.0, 0.0)])
+        results = update_hypothesis(hyp, [cell], 0.9, ppp)
         assert len(results) >= 2  # at least: (track+cell) and (track missed + birth)
 
     def test_update_no_tracks_creates_birth(self):
         hyp = GlobalHypothesis(log_weight=0.0, tracks=[])
         cell = _make_cell()
-        birth = BirthModel(r_birth=0.1)
-        results = update_hypothesis(hyp, [cell], 0.9, birth.new_bernoulli)
+        ppp = _make_ppp([(0.0, 0.0)])
+        results = update_hypothesis(hyp, [cell], 0.9, ppp)
         # Only option: create a new birth track
         assert any(len(h.tracks) == 1 for h in results)
 
@@ -126,8 +138,8 @@ class TestGlobalHypothesis:
         tracks = [Bernoulli(r=0.8, state=_make_state((float(i), 0.0))) for i in range(3)]
         hyp = GlobalHypothesis(log_weight=0.0, tracks=tracks)
         cells = [_make_cell((float(j), 0.0), seed=j) for j in range(3)]
-        birth = BirthModel()
-        results = update_hypothesis(hyp, cells, 0.9, birth.new_bernoulli, max_hypotheses=5)
+        ppp = _make_ppp([(float(j), 0.0) for j in range(3)])
+        results = update_hypothesis(hyp, cells, 0.9, ppp, max_hypotheses=5)
         assert len(results) <= 5
 
 
@@ -184,7 +196,7 @@ class TestPMBMFilter:
         f.predict(dt=0.1)
 
     def test_update_with_one_cell_creates_birth_track(self):
-        f = PMBMFilter(birth_model=BirthModel(r_birth=0.5))
+        f = PMBMFilter(birth_model=BirthModel(birth_weight=0.5))
         cell = _make_cell(center=(5.0, 5.0))
         f.update([cell])
         estimates = f.extract_estimates(existence_threshold=0.4)
@@ -201,7 +213,7 @@ class TestPMBMFilter:
         f = PMBMFilter(
             p_survival=0.99,
             p_detection=0.9,
-            birth_model=BirthModel(r_birth=0.3, birth_log_rate=-4.6),
+            birth_model=BirthModel(birth_weight=0.01),
             max_hypotheses=50,
             prune_log_threshold=-30.0,
         )
@@ -230,7 +242,7 @@ class TestPMBMFilter:
     def test_missed_frames_reduce_existence(self):
         """After several frames with no measurements, r should drop."""
         f = PMBMFilter(p_survival=0.99, p_detection=0.9,
-                       birth_model=BirthModel(r_birth=0.5))
+                       birth_model=BirthModel(birth_weight=0.5))
         # Seed a track
         cell = _make_cell(center=(5.0, 5.0))
         f.update([cell])
@@ -245,3 +257,26 @@ class TestPMBMFilter:
             (b.r for h in f._hypotheses for b in h.tracks), default=0.0
         )
         assert r_final < r_initial
+
+    def test_ppp_components_accumulate_and_decay(self):
+        """PPP should have components after an update, then decay when no cells seen."""
+        f = PMBMFilter()
+        cell = _make_cell(center=(5.0, 5.0))
+        f.predict(dt=0.5)
+        f.update([cell])
+        assert len(f.ppp.components) >= 1  # birth components added and survived
+
+        # Several empty frames → PPP decays
+        for _ in range(20):
+            f.predict(dt=0.5)
+            f.update([])
+        # All components should either be pruned or have very small weights
+        total_weight = sum(c.weight for c in f.ppp.components)
+        assert total_weight < 0.5
+
+    def test_birth_log_rate_compat(self):
+        """BirthModel.birth_log_rate property remains backward-compatible."""
+        bm = BirthModel(birth_weight=0.01)
+        assert bm.birth_log_rate == pytest.approx(np.log(0.01), rel=1e-6)
+        bm.birth_log_rate = -2.3
+        assert bm.birth_weight == pytest.approx(np.exp(-2.3), rel=1e-5)
