@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EOT Simulator — Tracking Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1117; --bg2: #1a1d27; --bg3: #252836;
+      --border: #2e3347; --text: #e2e8f0; --muted: #8892a4;
+      --green: #4ade80; --red: #f87171; --blue: #60a5fa;
+      --orange: #fb923c; --purple: #c084fc; --cyan: #22d3ee;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* Header */
+    header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+    header h1 { font-size: 18px; font-weight: 700; letter-spacing: 0.02em; }
+    header .meta { color: var(--muted); font-size: 12px; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 600; }
+    .badge.pass { background: rgba(74,222,128,0.15); color: var(--green); border: 1px solid rgba(74,222,128,0.3); }
+    .badge.fail { background: rgba(248,113,113,0.15); color: var(--red);   border: 1px solid rgba(248,113,113,0.3); }
+
+    /* Layout */
+    main { max-width: 1280px; margin: 0 auto; padding: 24px 16px; }
+    section { margin-bottom: 32px; }
+    h2 { font-size: 15px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }
+
+    /* Cards */
+    .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+    .card-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+    .metric-card { text-align: center; padding: 14px 10px; }
+    .metric-card .val { font-size: 22px; font-weight: 700; }
+    .metric-card .lbl { font-size: 11px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.06em; }
+
+    /* Test summary */
+    .test-bar { height: 8px; border-radius: 4px; overflow: hidden; display: flex; margin-top: 8px; }
+    .test-bar .pass-seg { background: var(--green); }
+    .test-bar .fail-seg { background: var(--red); }
+
+    /* Scenario tabs */
+    .tabs { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
+    .tab { padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; color: var(--muted); border: 1px solid transparent; transition: all 0.15s; }
+    .tab:hover { color: var(--text); border-color: var(--border); }
+    .tab.active { background: var(--bg3); color: var(--text); border-color: var(--blue); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Eval summary table */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead tr { background: var(--bg3); }
+    th, td { padding: 8px 12px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    th:first-child, td:first-child { text-align: left; }
+    tr:hover td { background: var(--bg3); }
+    .good { color: var(--green); } .bad { color: var(--red); } .ok { color: var(--orange); }
+
+    /* Charts grid */
+    .chart-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+    .chart-box { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+    .chart-box h3 { font-size: 12px; color: var(--muted); margin-bottom: 8px; font-weight: 500; }
+    canvas { max-height: 180px; }
+
+    /* Spinner */
+    .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading { text-align: center; padding: 60px; color: var(--muted); }
+
+    /* Nav link */
+    .sim-link { display: inline-flex; align-items: center; gap: 8px; background: var(--blue); color: #0f1117; padding: 8px 16px; border-radius: 8px; font-weight: 600; font-size: 13px; margin-top: 4px; }
+    .sim-link:hover { background: #93c5fd; text-decoration: none; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>EOT Simulator — Tracking Dashboard</h1>
+    <div class="meta" id="header-meta">Loading...</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <span id="test-badge" class="badge"><span class="spinner"></span> テスト確認中</span>
+    <a href="sim.html" class="sim-link">▶ インタラクティブ Sim</a>
+  </div>
+</header>
+
+<main id="loading">
+  <div class="spinner" style="width:32px;height:32px;border-width:3px;"></div>
+  <p style="margin-top:16px;">データを読み込み中...</p>
+</main>
+
+<main id="content" style="display:none;">
+
+  <!-- Test Summary -->
+  <section>
+    <h2>テスト結果</h2>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+        <div>
+          <span id="test-summary-text" style="font-size:18px;font-weight:700;"></span>
+          <div class="test-bar" id="test-bar" style="width:320px;max-width:100%;margin-top:8px;"></div>
+        </div>
+        <div style="color:var(--muted);font-size:13px;text-align:right;" id="test-detail"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Eval Summary Table -->
+  <section>
+    <h2>シナリオ別 評価指標</h2>
+    <div class="card table-wrap">
+      <table id="eval-table">
+        <thead>
+          <tr>
+            <th>シナリオ</th>
+            <th>GOSPA [m]</th>
+            <th>Pos RMSE [m]</th>
+            <th>Vel RMSE [m/s]</th>
+            <th>Yaw RMSE [°]</th>
+            <th>Len RMSE [m]</th>
+            <th>Wid RMSE [m]</th>
+            <th>IDSW/run</th>
+            <th>MOTP [m]</th>
+            <th>MOTA</th>
+            <th>FA/frame</th>
+            <th>MissRate</th>
+          </tr>
+        </thead>
+        <tbody id="eval-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Per-scenario Charts -->
+  <section>
+    <h2>フレーム別 指標推移</h2>
+    <div class="tabs" id="scenario-tabs"></div>
+    <div id="scenario-panels"></div>
+  </section>
+
+</main>
+
+<script>
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+const $ = id => document.getElementById(id);
+
+function colorVal(v, low, high) {
+  if (v == null || !isFinite(v)) return '';
+  if (v <= low)  return 'good';
+  if (v >= high) return 'bad';
+  return 'ok';
+}
+
+function makeChart(canvasId, label, data, color) {
+  const frames = data.map((_, i) => i);
+  const valid  = data.map(v => v == null ? NaN : v);
+  new Chart($(canvasId), {
+    type: 'line',
+    data: {
+      labels: frames,
+      datasets: [{
+        label,
+        data: valid,
+        borderColor: color,
+        backgroundColor: color + '22',
+        borderWidth: 1.8,
+        pointRadius: 0,
+        fill: true,
+        tension: 0.3,
+        spanGaps: true,
+      }]
+    },
+    options: {
+      responsive: true,
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: '#2e3347' }, ticks: { color: '#8892a4', maxTicksLimit: 8 } },
+        y: { grid: { color: '#2e3347' }, ticks: { color: '#8892a4', maxTicksLimit: 5 } },
+      }
+    }
+  });
+}
+
+const SCENARIO_LABELS = {
+  single_approach: '単体アプローチ',
+  single_passby:   '単体追い越し',
+  two_vehicles:    '2台同時',
+  missed_recovery: '欠損→復帰',
+};
+
+// ---------------------------------------------------------------------------
+// Render
+// ---------------------------------------------------------------------------
+async function init() {
+  try {
+    const [testRaw, evalRaw] = await Promise.all([
+      fetch('./data/test_results.json').then(r => r.json()),
+      fetch('./data/eval_results.json').then(r => r.json()),
+    ]);
+
+    $('loading').style.display = 'none';
+    $('content').style.display = 'block';
+
+    renderHeader(testRaw, evalRaw);
+    renderTestSummary(testRaw);
+    renderEvalTable(evalRaw);
+    renderScenarioCharts(evalRaw);
+  } catch (e) {
+    $('loading').innerHTML = `<p style="color:var(--red)">データ読み込み失敗: ${e.message}<br>CI でレポートを生成してください。</p>`;
+  }
+}
+
+function renderHeader(testRaw, evalRaw) {
+  const sha = evalRaw.git_sha || '?';
+  const dt  = new Date(evalRaw.generated_at);
+  const dtStr = dt.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+  $('header-meta').textContent = `git: ${sha}  |  生成: ${dtStr}  |  MC=${evalRaw.n_mc}`;
+
+  const s = testRaw.summary;
+  const ok = s.failed === 0 && s.error === 0;
+  const badge = $('test-badge');
+  badge.className = `badge ${ok ? 'pass' : 'fail'}`;
+  badge.textContent = ok ? `✓ ${s.passed} passed` : `✗ ${s.failed} failed`;
+}
+
+function renderTestSummary(data) {
+  const s = data.summary;
+  $('test-summary-text').textContent = `${s.passed} / ${s.total} テスト通過`;
+  $('test-summary-text').style.color = s.failed > 0 ? 'var(--red)' : 'var(--green)';
+
+  const bar = $('test-bar');
+  const pct = s.total > 0 ? (s.passed / s.total * 100) : 100;
+  bar.innerHTML = `
+    <div class="pass-seg" style="width:${pct}%"></div>
+    <div class="fail-seg" style="width:${100 - pct}%"></div>`;
+
+  $('test-detail').innerHTML =
+    `通過: <span style="color:var(--green)">${s.passed}</span>  ` +
+    `失敗: <span style="color:var(--red)">${s.failed}</span>  ` +
+    `エラー: <span style="color:var(--orange)">${s.error}</span><br>` +
+    `実行時間: ${s.duration_s}s`;
+}
+
+function renderEvalTable(data) {
+  const tbody = $('eval-tbody');
+  for (const [key, sc] of Object.entries(data.scenarios)) {
+    const m = sc.summary;
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td><strong>${SCENARIO_LABELS[key] || key}</strong></td>
+      <td class="${colorVal(m.gospa, 1.0, 3.0)}">${m.gospa.toFixed(3)}</td>
+      <td class="${colorVal(m.pos_rmse, 0.5, 2.0)}">${m.pos_rmse.toFixed(3)}</td>
+      <td class="${colorVal(m.vel_rmse, 0.5, 2.0)}">${m.vel_rmse.toFixed(3)}</td>
+      <td class="${colorVal(m.yaw_rmse_deg, 20, 60)}">${m.yaw_rmse_deg.toFixed(1)}</td>
+      <td class="${colorVal(m.length_rmse, 0.3, 1.0)}">${m.length_rmse.toFixed(3)}</td>
+      <td class="${colorVal(m.width_rmse, 0.2, 0.8)}">${m.width_rmse.toFixed(3)}</td>
+      <td class="${colorVal(m.id_switches, 0, 2)}">${m.id_switches.toFixed(1)}</td>
+      <td class="${colorVal(m.motp, 0, 2.0)}">${m.motp.toFixed(3)}</td>
+      <td class="${colorVal(1 - m.mota, 0, 0.3)}">${m.mota.toFixed(3)}</td>
+      <td>${m.false_alarm_rate.toFixed(3)}</td>
+      <td>${m.miss_rate.toFixed(3)}</td>`;
+    tbody.appendChild(row);
+  }
+}
+
+function renderScenarioCharts(data) {
+  const tabsEl   = $('scenario-tabs');
+  const panelsEl = $('scenario-panels');
+  const keys = Object.keys(data.scenarios);
+
+  keys.forEach((key, idx) => {
+    // Tab button
+    const btn = document.createElement('button');
+    btn.className = `tab${idx === 0 ? ' active' : ''}`;
+    btn.textContent = SCENARIO_LABELS[key] || key;
+    btn.dataset.key = key;
+    btn.onclick = () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      $(`panel-${key}`).classList.add('active');
+    };
+    tabsEl.appendChild(btn);
+
+    // Panel
+    const sc = data.scenarios[key];
+    const bf = sc.by_frame;
+    const panel = document.createElement('div');
+    panel.id = `panel-${key}`;
+    panel.className = `tab-panel${idx === 0 ? ' active' : ''}`;
+
+    const charts = [
+      { id: `c-gospa-${key}`,      title: 'GOSPA [m]',       data: bf.gospa,       color: '#60a5fa' },
+      { id: `c-pos-${key}`,        title: 'Pos RMSE [m]',    data: bf.pos_rmse,    color: '#fb923c' },
+      { id: `c-vel-${key}`,        title: 'Vel RMSE [m/s]',  data: bf.vel_rmse,    color: '#4ade80' },
+      { id: `c-yaw-${key}`,        title: 'Yaw RMSE [°]',    data: bf.yaw_rmse_deg,color: '#f87171' },
+      { id: `c-len-${key}`,        title: 'Length RMSE [m]', data: bf.length_rmse, color: '#c084fc' },
+      { id: `c-idsw-${key}`,       title: 'ID Switches/run', data: bf.id_switches, color: '#facc15' },
+    ];
+
+    panel.innerHTML = `<div class="chart-grid">${charts.map(c =>
+      `<div class="chart-box"><h3>${c.title}</h3><canvas id="${c.id}"></canvas></div>`
+    ).join('')}</div>`;
+
+    panelsEl.appendChild(panel);
+
+    // Charts are created after DOM is ready
+    setTimeout(() => {
+      charts.forEach(c => makeChart(c.id, c.title, c.data, c.color));
+    }, 0);
+  });
+}
+
+init();
+</script>
+</body>
+</html>

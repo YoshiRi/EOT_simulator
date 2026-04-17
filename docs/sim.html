@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EOT Simulator — Interactive Simulation</title>
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.27.4/full/pyodide.js"></script>
+  <style>
+    :root {
+      --bg: #0f1117; --bg2: #1a1d27; --bg3: #252836;
+      --border: #2e3347; --text: #e2e8f0; --muted: #8892a4;
+      --green: #4ade80; --red: #f87171; --blue: #60a5fa;
+      --orange: #fb923c; --purple: #c084fc;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; }
+
+    header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+    header h1 { font-size: 17px; font-weight: 700; }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* Loading overlay */
+    #overlay { position: fixed; inset: 0; background: rgba(15,17,23,0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; z-index: 999; }
+    #overlay.hidden { display: none; }
+    .spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #load-status { color: var(--muted); font-size: 13px; text-align: center; max-width: 320px; }
+    #load-progress { width: 280px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    #load-bar { height: 100%; background: var(--blue); width: 0%; transition: width 0.3s; }
+
+    /* Layout */
+    .page { display: grid; grid-template-columns: 280px 1fr; gap: 0; height: calc(100vh - 49px); }
+    @media (max-width: 800px) { .page { grid-template-columns: 1fr; } }
+
+    /* Sidebar */
+    .sidebar { background: var(--bg2); border-right: 1px solid var(--border); padding: 20px 16px; overflow-y: auto; }
+    .sidebar h2 { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }
+
+    .field { margin-bottom: 16px; }
+    .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+    .field select, .field input[type=range] { width: 100%; }
+    select { background: var(--bg3); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 13px; }
+    input[type=range] { accent-color: var(--blue); cursor: pointer; }
+    .range-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 3px; }
+    .val-disp { color: var(--text); font-weight: 600; }
+
+    button#run-btn {
+      width: 100%; padding: 10px; background: var(--blue); color: #0f1117;
+      border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer;
+      transition: background 0.15s; margin-top: 4px;
+    }
+    button#run-btn:hover:not(:disabled) { background: #93c5fd; }
+    button#run-btn:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
+
+    /* Output area */
+    .output { overflow-y: auto; padding: 20px; }
+    .output h2 { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }
+
+    #run-status { font-size: 12px; color: var(--muted); margin-top: 8px; min-height: 18px; }
+    .running { color: var(--orange) !important; }
+
+    /* Metric cards */
+    .metric-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); margin-bottom: 20px; }
+    .metric-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; text-align: center; }
+    .metric-card .val { font-size: 20px; font-weight: 700; }
+    .metric-card .lbl { font-size: 11px; color: var(--muted); margin-top: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+    /* SVG chart area */
+    #svg-area { background: white; border-radius: 8px; overflow: hidden; }
+    #svg-area svg { width: 100%; height: auto; display: block; }
+
+    #placeholder { text-align: center; padding: 60px; color: var(--muted); background: var(--bg2); border: 1px dashed var(--border); border-radius: 8px; font-size: 13px; }
+    #error-box { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.3); color: var(--red); padding: 12px; border-radius: 8px; font-size: 12px; white-space: pre-wrap; display: none; }
+  </style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div id="overlay">
+  <div class="spinner"></div>
+  <div id="load-status">Python ランタイムを初期化中...</div>
+  <div id="load-progress"><div id="load-bar"></div></div>
+  <div style="color:var(--muted);font-size:11px;">numpy / scipy / matplotlib を含む Pyodide を読み込んでいます</div>
+</div>
+
+<header>
+  <h1>EOT Simulator — Interactive Simulation</h1>
+  <a href="index.html">← Dashboard</a>
+</header>
+
+<div class="page">
+  <!-- Sidebar: parameters -->
+  <aside class="sidebar">
+    <h2>シナリオ</h2>
+    <div class="field">
+      <label>シナリオ選択</label>
+      <select id="sel-scenario">
+        <option value="single_approach">単体アプローチ</option>
+        <option value="single_passby">単体追い越し</option>
+        <option value="two_vehicles">2台同時</option>
+        <option value="missed_recovery">欠損→復帰</option>
+      </select>
+    </div>
+
+    <h2 style="margin-top:12px;">フィルタパラメータ</h2>
+
+    <div class="field">
+      <label>p_survival (生存確率) — <span class="val-disp" id="disp-ps">0.99</span></label>
+      <input type="range" id="sl-ps" min="0.80" max="0.999" step="0.001" value="0.99">
+      <div class="range-row"><span>0.80</span><span>0.999</span></div>
+    </div>
+
+    <div class="field">
+      <label>p_detection (検出確率) — <span class="val-disp" id="disp-pd">0.90</span></label>
+      <input type="range" id="sl-pd" min="0.50" max="0.999" step="0.001" value="0.90">
+      <div class="range-row"><span>0.50</span><span>0.999</span></div>
+    </div>
+
+    <div class="field">
+      <label>birth_weight (誕生重み) — <span class="val-disp" id="disp-bw">0.20</span></label>
+      <input type="range" id="sl-bw" min="0.01" max="0.50" step="0.01" value="0.20">
+      <div class="range-row"><span>0.01</span><span>0.50</span></div>
+    </div>
+
+    <div class="field">
+      <label>prune_log_threshold — <span class="val-disp" id="disp-pt">-15</span></label>
+      <input type="range" id="sl-pt" min="-30" max="-5" step="1" value="-15">
+      <div class="range-row"><span>-30</span><span>-5</span></div>
+    </div>
+
+    <div class="field">
+      <label>MC 試行回数 — <span class="val-disp" id="disp-mc">5</span></label>
+      <input type="range" id="sl-mc" min="1" max="20" step="1" value="5">
+      <div class="range-row"><span>1</span><span>20</span></div>
+    </div>
+
+    <button id="run-btn" disabled>▶ シミュレーション実行</button>
+    <div id="run-status"></div>
+  </aside>
+
+  <!-- Main output -->
+  <section class="output">
+    <h2>評価指標</h2>
+    <div class="metric-grid" id="metrics-area">
+      <!-- filled by JS -->
+    </div>
+    <div id="error-box"></div>
+    <h2>フレーム別 指標グラフ</h2>
+    <div id="svg-area">
+      <div id="placeholder">シミュレーションを実行すると結果が表示されます</div>
+    </div>
+  </section>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Slider bindings
+// ---------------------------------------------------------------------------
+function bindSlider(slId, dispId, fmt) {
+  const sl = document.getElementById(slId);
+  const disp = document.getElementById(dispId);
+  disp.textContent = fmt(sl.value);
+  sl.addEventListener('input', () => { disp.textContent = fmt(sl.value); });
+}
+bindSlider('sl-ps', 'disp-ps', v => parseFloat(v).toFixed(3));
+bindSlider('sl-pd', 'disp-pd', v => parseFloat(v).toFixed(3));
+bindSlider('sl-bw', 'disp-bw', v => parseFloat(v).toFixed(2));
+bindSlider('sl-pt', 'disp-pt', v => parseInt(v).toString());
+bindSlider('sl-mc', 'disp-mc', v => parseInt(v).toString());
+
+// ---------------------------------------------------------------------------
+// Pyodide initialisation
+// ---------------------------------------------------------------------------
+let pyodide = null;
+let simReady = false;
+
+function setProgress(pct, msg) {
+  document.getElementById('load-bar').style.width = pct + '%';
+  document.getElementById('load-status').textContent = msg;
+}
+
+async function initPyodide() {
+  setProgress(5, 'Pyodide ランタイムをロード中...');
+  pyodide = await loadPyodide();
+
+  setProgress(20, 'numpy / scipy をロード中...');
+  await pyodide.loadPackage(['numpy', 'scipy', 'matplotlib']);
+
+  setProgress(60, 'eot-simulator パッケージをインストール中...');
+
+  // Get whl URL from whl_info.json (generated by CI)
+  let whlUrl = null;
+  try {
+    const info = await fetch('./data/whl_info.json').then(r => r.json());
+    if (info.whl_name) {
+      whlUrl = new URL('./' + info.whl_name, document.baseURI).href;
+    }
+  } catch (_) {}
+
+  if (!whlUrl) {
+    // Fallback: try the predictable name
+    whlUrl = new URL('./eot_simulator-0.1.0-py3-none-any.whl', document.baseURI).href;
+  }
+
+  await pyodide.runPythonAsync(`
+import micropip
+await micropip.install('${whlUrl}')
+`);
+
+  setProgress(90, 'シミュレーションコードを準備中...');
+  await pyodide.runPythonAsync(SIM_PYTHON_CODE);
+
+  setProgress(100, '準備完了');
+  await new Promise(r => setTimeout(r, 300));
+
+  document.getElementById('overlay').classList.add('hidden');
+  document.getElementById('run-btn').disabled = false;
+  simReady = true;
+}
+
+// ---------------------------------------------------------------------------
+// Simulation Python code (loaded once into Pyodide namespace)
+// ---------------------------------------------------------------------------
+const SIM_PYTHON_CODE = `
+import math, io, json
+import matplotlib
+matplotlib.use('agg')
+import matplotlib.pyplot as plt
+import numpy as np
+
+from src.simulator import LidarSimulator, VehicleSimulator
+from src.tracking.pmbm.pmbm_filter import BirthModel, PMBMFilter
+from src.tracking.shape.rectangle_fitting import fit_rectangle
+from src.tracking.shape.smoothing import ExponentialSmoother
+from src.tracking.measurement.partition import partition
+from src.tracking.evaluation.association import associate
+from src.tracking.evaluation.metrics import gospa as gospa_metric
+
+# ----- シナリオ定義 -----
+_SCENARIOS = {
+    'single_approach': {
+        'vehicles': lambda: [VehicleSimulator(25.0, 0.0, math.pi, 3.0, 50/3.6, 2.0, 4.0)],
+        'n_frames': 20, 'dt': 0.5, 'angle_res_deg': 2.0, 'miss_frames': [],
+    },
+    'single_passby': {
+        'vehicles': lambda: [VehicleSimulator(-20.0, 8.0, 0.0, 5.0, 50/3.6, 2.0, 4.0)],
+        'n_frames': 20, 'dt': 0.5, 'angle_res_deg': 2.0, 'miss_frames': [],
+    },
+    'two_vehicles': {
+        'vehicles': lambda: [
+            VehicleSimulator(20.0, 0.0,  math.pi,       3.0, 50/3.6, 2.0, 4.0),
+            VehicleSimulator(0.0,  15.0, math.pi * 1.5, 2.0, 50/3.6, 2.0, 4.0),
+        ],
+        'n_frames': 20, 'dt': 0.5, 'angle_res_deg': 2.0, 'miss_frames': [],
+    },
+    'missed_recovery': {
+        'vehicles': lambda: [VehicleSimulator(20.0, 0.0, math.pi, 2.0, 50/3.6, 2.0, 4.0)],
+        'n_frames': 25, 'dt': 0.5, 'angle_res_deg': 2.0, 'miss_frames': list(range(8, 12)),
+    },
+}
+
+
+def _run_once(sc_cfg, filt, seed):
+    lidar = LidarSimulator(range_noise=0.05, seed=seed)
+    vehicles = sc_cfg['vehicles']()
+    smoothers = {}
+    dt = sc_cfg['dt']
+    miss_frames = set(sc_cfg['miss_frames'])
+
+    gospa_vals, pos_errs, vel_errs, yaw_errs = [], [], [], []
+    id_sw_vals = []
+    prev_asgn = {}
+
+    for fi in range(sc_cfg['n_frames']):
+        for v in vehicles:
+            v.update(dt=dt, a=0.0, omega=0.0)
+
+        gt_pos = np.array([[v.x, v.y] for v in vehicles])
+
+        is_miss = fi in miss_frames
+        if not is_miss:
+            ox, oy = lidar.get_observation_points(vehicles, np.deg2rad(sc_cfg['angle_res_deg']))
+        else:
+            ox, oy = [], []
+
+        filt.predict(dt=dt)
+        if ox:
+            pts = np.column_stack([ox, oy])
+            filt.update_from_points(pts, eps=2.0)
+        else:
+            filt.update([])
+
+        ests = filt.extract_estimates(existence_threshold=0.5)
+        est_pos = np.array([s.position for s in ests]) if ests else np.empty((0, 2))
+
+        # GOSPA
+        g = gospa_metric(gt_pos, est_pos, c=2.0, p=2, alpha=2.0)
+        gospa_vals.append(g['gospa'])
+
+        # Association for errors
+        asgn = associate(gt_pos, est_pos, gate_distance=6.0)
+        pos_err = float(np.mean(asgn.distances)) if asgn.distances else float('nan')
+        pos_errs.append(pos_err)
+
+        # ID switch counting (simplified)
+        curr_asgn = {ei: gi for gi, ei in zip(asgn.matched_gt, asgn.matched_est)}
+        idsw = sum(1 for ei, gi in curr_asgn.items() if prev_asgn.get(ei, gi) != gi)
+        id_sw_vals.append(float(idsw))
+        prev_asgn = curr_asgn
+
+    return {
+        'gospa': gospa_vals,
+        'pos_rmse': pos_errs,
+        'id_switches': id_sw_vals,
+    }
+
+
+def run_simulation_json(scenario_key, n_mc, p_survival, p_detection, birth_weight, prune_log_threshold):
+    sc_cfg = _SCENARIOS[scenario_key]
+    n_frames = sc_cfg['n_frames']
+
+    all_gospa  = np.zeros((n_mc, n_frames))
+    all_pos    = np.zeros((n_mc, n_frames))
+    all_idsw   = np.zeros((n_mc, n_frames))
+
+    for mc_i in range(n_mc):
+        filt = PMBMFilter(
+            p_survival=p_survival,
+            p_detection=p_detection,
+            birth_model=BirthModel(birth_weight=birth_weight, vel_var=1e2),
+            max_hypotheses=50,
+            prune_log_threshold=prune_log_threshold,
+        )
+        r = _run_once(sc_cfg, filt, seed=mc_i * 17)
+        all_gospa[mc_i]  = np.where(np.isfinite(r['gospa']),  r['gospa'],  np.nan)
+        all_pos[mc_i]    = np.where(np.isfinite(r['pos_rmse']), r['pos_rmse'], np.nan)
+        all_idsw[mc_i]   = r['id_switches']
+
+    gospa_mean = np.nanmean(all_gospa, axis=0)
+    pos_mean   = np.nanmean(all_pos,   axis=0)
+    idsw_mean  = np.nanmean(all_idsw,  axis=0)
+
+    summary = {
+        'gospa':        float(np.nanmean(gospa_mean)),
+        'pos_rmse':     float(np.nanmean(pos_mean)),
+        'id_switches':  float(np.nansum(idsw_mean)),
+    }
+
+    # --- Plot ---
+    frames = np.arange(n_frames)
+    fig, axes = plt.subplots(1, 3, figsize=(12, 3.5))
+    fig.patch.set_facecolor('#1a1d27')
+    colors = ['#60a5fa', '#fb923c', '#facc15']
+    titles = ['GOSPA [m]', 'Pos RMSE [m]', 'ID Switches/run']
+    datas  = [gospa_mean, pos_mean, idsw_mean]
+
+    for ax, title, data, color in zip(axes, titles, datas, colors):
+        ax.set_facecolor('#252836')
+        valid = np.isfinite(data)
+        ax.plot(frames[valid], data[valid], color=color, linewidth=2)
+        ax.fill_between(frames[valid], 0, data[valid], alpha=0.2, color=color)
+        ax.set_title(title, color='#e2e8f0', fontsize=11)
+        ax.set_xlabel('Frame', color='#8892a4', fontsize=9)
+        ax.tick_params(colors='#8892a4', labelsize=8)
+        for spine in ax.spines.values():
+            spine.set_edgecolor('#2e3347')
+        ax.grid(True, alpha=0.2, color='#2e3347')
+
+    fig.suptitle(
+        f'{scenario_key}  (MC={n_mc}  pS={p_survival:.3f}  pD={p_detection:.3f}  bw={birth_weight:.2f})',
+        color='#e2e8f0', fontsize=10, y=1.02
+    )
+    plt.tight_layout()
+
+    buf = io.StringIO()
+    fig.savefig(buf, format='svg', bbox_inches='tight', facecolor=fig.get_facecolor())
+    plt.close(fig)
+
+    return json.dumps({'summary': summary, 'svg': buf.getvalue()})
+
+print("Simulation code loaded OK")
+`;
+
+// ---------------------------------------------------------------------------
+// Run simulation
+// ---------------------------------------------------------------------------
+document.getElementById('run-btn').addEventListener('click', async () => {
+  if (!simReady) return;
+
+  const btn    = document.getElementById('run-btn');
+  const status = document.getElementById('run-status');
+  const errBox = document.getElementById('error-box');
+
+  btn.disabled = true;
+  status.className = 'running';
+  status.textContent = '実行中... (数秒かかります)';
+  errBox.style.display = 'none';
+  document.getElementById('placeholder').style.display = 'none';
+
+  const params = {
+    scenario:   document.getElementById('sel-scenario').value,
+    n_mc:       parseInt(document.getElementById('sl-mc').value),
+    p_survival: parseFloat(document.getElementById('sl-ps').value),
+    p_detection:parseFloat(document.getElementById('sl-pd').value),
+    birth_weight:parseFloat(document.getElementById('sl-bw').value),
+    prune_log_threshold: parseInt(document.getElementById('sl-pt').value),
+  };
+
+  try {
+    const t0 = Date.now();
+    const resultJson = await pyodide.runPythonAsync(`
+run_simulation_json(
+    '${params.scenario}',
+    ${params.n_mc},
+    ${params.p_survival},
+    ${params.p_detection},
+    ${params.birth_weight},
+    ${params.prune_log_threshold},
+)
+`);
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+    const result = JSON.parse(resultJson);
+
+    renderMetrics(result.summary);
+    document.getElementById('svg-area').innerHTML = result.svg;
+    status.className = '';
+    status.textContent = `完了 (${elapsed}s)`;
+  } catch (e) {
+    errBox.textContent = String(e);
+    errBox.style.display = 'block';
+    document.getElementById('placeholder').style.display = 'block';
+    status.className = '';
+    status.textContent = 'エラーが発生しました';
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function renderMetrics(summary) {
+  const area = document.getElementById('metrics-area');
+  const items = [
+    { label: 'GOSPA [m]',    val: summary.gospa.toFixed(3),       color: '#60a5fa' },
+    { label: 'Pos RMSE [m]', val: summary.pos_rmse.toFixed(3),    color: '#fb923c' },
+    { label: 'IDSW/run',     val: summary.id_switches.toFixed(1), color: '#facc15' },
+  ];
+  area.innerHTML = items.map(it => `
+    <div class="metric-card">
+      <div class="val" style="color:${it.color}">${it.val}</div>
+      <div class="lbl">${it.label}</div>
+    </div>`).join('');
+}
+
+// ---------------------------------------------------------------------------
+// Boot
+// ---------------------------------------------------------------------------
+initPyodide().catch(e => {
+  document.getElementById('load-status').textContent = 'ロード失敗: ' + e.message;
+  document.getElementById('load-status').style.color = 'var(--red)';
+});
+</script>
+</body>
+</html>
