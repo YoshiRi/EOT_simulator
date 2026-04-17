@@ -1,0 +1,69 @@
+name: GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Allow one concurrent deployment
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build dashboard & evaluate
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install project + dev deps
+        run: uv sync --extra dev
+
+      # --- Build wheel (for Pyodide) ---
+      - name: Build wheel
+        run: uv build --wheel
+
+      - name: Copy wheel to docs/
+        run: |
+          WHL=$(ls dist/*.whl | head -1)
+          cp "$WHL" docs/
+          echo "Wheel: $WHL"
+
+      # --- Generate JSON reports ---
+      - name: Generate reports (tests + evaluation)
+        run: uv run python scripts/generate_report.py --n-mc 30
+
+      # --- Upload artifact for deployment ---
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
