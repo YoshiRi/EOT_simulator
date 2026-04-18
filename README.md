@@ -1,5 +1,6 @@
 # EOT_simulator
 Extended Object Tracking simulation for Python.
+See demo in https://yoshiri.github.io/EOT_simulator/.
 
 Estimates the position, velocity, existence probability, and shape (OBB) of multiple objects
 from LiDAR / Radar point cloud measurements.
