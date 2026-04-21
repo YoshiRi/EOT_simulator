@@ -184,8 +184,8 @@ async function initPyodide() {
   setProgress(5, 'Pyodide ランタイムをロード中...');
   pyodide = await loadPyodide();
 
-  setProgress(20, 'numpy / scipy をロード中...');
-  await pyodide.loadPackage(['numpy', 'scipy', 'matplotlib']);
+  setProgress(20, 'numpy / scipy / micropip をロード中...');
+  await pyodide.loadPackage(['numpy', 'scipy', 'matplotlib', 'micropip']);
 
   setProgress(60, 'eot-simulator パッケージをインストール中...');
 
