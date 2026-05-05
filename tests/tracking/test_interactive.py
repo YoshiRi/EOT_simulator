@@ -175,3 +175,71 @@ class TestRunSimulationJson:
     def test_unknown_scenario_raises(self):
         with pytest.raises(KeyError):
             run_simulation_json("nonexistent", 1, 0.99, 0.9, 0.2, -15.0)
+
+    def test_frame_data_present(self):
+        data = self._run()
+        assert "frame_data" in data
+        assert "sensor_origin" in data["frame_data"]
+        assert "frames" in data["frame_data"]
+
+    def test_frame_data_length_matches_scenario(self):
+        data = self._run(scenario_key="single_approach")
+        n_frames = SCENARIOS["single_approach"]["n_frames"]
+        assert len(data["frame_data"]["frames"]) == n_frames
+
+    def test_frame_keys(self):
+        data = self._run()
+        frame = data["frame_data"]["frames"][0]
+        assert {"fi", "missed", "gt", "obs", "est"} <= frame.keys()
+
+    def test_frame_index_is_sequential(self):
+        data = self._run()
+        for i, f in enumerate(data["frame_data"]["frames"]):
+            assert f["fi"] == i
+
+    def test_gt_has_required_fields(self):
+        data = self._run()
+        for frame in data["frame_data"]["frames"]:
+            for g in frame["gt"]:
+                assert {"x", "y", "yaw", "l", "w"} <= g.keys()
+                assert g["l"] > 0 and g["w"] > 0
+
+    def test_obs_is_list_of_pairs(self):
+        data = self._run()
+        for frame in data["frame_data"]["frames"]:
+            for pt in frame["obs"]:
+                assert len(pt) == 2
+                assert all(np.isfinite(v) for v in pt)
+
+    def test_est_ellipse_axes_positive(self):
+        """Extent ellipse semi-axes must be positive (eigenvalues of SPD matrix)."""
+        data = self._run()
+        for frame in data["frame_data"]["frames"]:
+            for e in frame["est"]:
+                assert {"x", "y", "vx", "vy", "ext_a", "ext_b", "ext_theta"} <= e.keys()
+                assert e["ext_a"] > 0
+                assert e["ext_b"] > 0
+
+    def test_missed_frames_have_no_obs(self):
+        """Missed frames must have empty obs list."""
+        data = self._run(scenario_key="missed_recovery", n_mc=1)
+        miss_frames = set(SCENARIOS["missed_recovery"]["miss_frames"])
+        for frame in data["frame_data"]["frames"]:
+            if frame["fi"] in miss_frames:
+                assert frame["missed"] is True
+                assert frame["obs"] == []
+
+    def test_run_once_record_frames_false_returns_none(self):
+        """record_frames=False (default) → snapshots is None."""
+        from src.tracking.evaluation.interactive import run_once
+        cfg = _short_cfg("single_approach")
+        r = run_once(cfg, _make_filter(), seed=0, record_frames=False)
+        assert r["snapshots"] is None
+
+    def test_run_once_record_frames_true_returns_list(self):
+        """record_frames=True → snapshots has one entry per frame."""
+        from src.tracking.evaluation.interactive import run_once
+        cfg = _short_cfg("single_approach")
+        r = run_once(cfg, _make_filter(), seed=0, record_frames=True)
+        assert isinstance(r["snapshots"], list)
+        assert len(r["snapshots"]) == cfg["n_frames"]
