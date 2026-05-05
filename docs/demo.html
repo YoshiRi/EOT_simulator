@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EOT Simulator — 2D Visualization Demo</title>
+  <style>
+    :root {
+      --bg: #0f1117; --bg2: #1a1d27; --bg3: #252836;
+      --border: #2e3347; --text: #e2e8f0; --muted: #8892a4;
+      --blue: #60a5fa; --red: #f87171; --green: #4ade80;
+      --orange: #fb923c; --yellow: #facc15;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; }
+    header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+    header h1 { font-size: 17px; font-weight: 700; }
+    a { color: var(--blue); text-decoration: none; }
+
+    main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+
+    /* Controls */
+    .controls { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; display: flex; align-items: center; flex-wrap: wrap; gap: 16px; }
+    .controls label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+    select { background: var(--bg3); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+    .btn { padding: 7px 16px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; transition: background 0.15s; }
+    .btn-primary { background: var(--blue); color: #0f1117; }
+    .btn-primary:hover { background: #93c5fd; }
+    .btn-secondary { background: var(--bg3); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--border); }
+
+    /* Frame slider */
+    .slider-row { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 240px; }
+    input[type=range] { flex: 1; accent-color: var(--blue); cursor: pointer; }
+    .frame-label { font-size: 13px; font-weight: 600; min-width: 64px; text-align: right; }
+
+    /* Canvas area */
+    .canvas-wrap { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; position: relative; }
+    canvas { display: block; width: 100%; }
+    .missed-badge { position: absolute; top: 12px; right: 12px; background: rgba(248,113,113,0.2); border: 1px solid var(--red); color: var(--red); padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; display: none; }
+
+    /* Legend */
+    .legend { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--muted); }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .legend-rect { width: 14px; height: 10px; }
+    .legend-ellipse { width: 14px; height: 10px; border-radius: 50%; }
+
+    /* Metrics strip */
+    .metrics-strip { display: flex; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+    .metric { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 14px; text-align: center; flex: 1; min-width: 100px; }
+    .metric .val { font-size: 16px; font-weight: 700; }
+    .metric .lbl { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    #load-msg { text-align: center; padding: 40px; color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>EOT Simulator — 2D Visualization Demo</h1>
+  <div style="display:flex;gap:12px;">
+    <a href="index.html">← Dashboard</a>
+    <a href="sim.html">Interactive Sim →</a>
+  </div>
+</header>
+
+<main>
+  <div id="load-msg">データを読み込み中...</div>
+
+  <div id="app" style="display:none">
+    <div class="controls">
+      <div>
+        <label>シナリオ</label>
+        <select id="sel-scenario">
+          <option value="single_approach">単体アプローチ</option>
+          <option value="single_passby">単体追い越し</option>
+          <option value="two_vehicles">2台同時</option>
+          <option value="missed_recovery">欠損→復帰</option>
+        </select>
+      </div>
+
+      <button class="btn btn-secondary" id="btn-play">▶ Play</button>
+      <button class="btn btn-secondary" id="btn-step">Step →</button>
+      <button class="btn btn-secondary" id="btn-reset">⏮ Reset</button>
+
+      <div class="slider-row">
+        <label style="margin:0;white-space:nowrap;">Frame</label>
+        <input type="range" id="frame-slider" min="0" value="0">
+        <span class="frame-label" id="frame-label">0 / 0</span>
+      </div>
+    </div>
+
+    <div class="canvas-wrap">
+      <canvas id="canvas" height="480"></canvas>
+      <div class="missed-badge" id="missed-badge">観測なし (miss)</div>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:rgba(96,165,250,0.8)"></div> センサ原点</div>
+      <div class="legend-item"><div class="legend-rect" style="background:rgba(74,222,128,0.25);border:2px solid #4ade80;border-radius:2px"></div> GT (真値)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:rgba(250,204,21,0.7)"></div> LiDAR 観測点</div>
+      <div class="legend-item"><div class="legend-ellipse" style="background:rgba(248,113,113,0.25);border:2px solid #f87171"></div> 推定 (GGIW extent)</div>
+      <div class="legend-item"><div style="width:14px;height:2px;background:#fb923c;display:inline-block"></div>&nbsp;速度ベクトル</div>
+    </div>
+
+    <div class="metrics-strip" id="metrics-strip"></div>
+  </div>
+</main>
+
+<script>
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+let allData = {};    // scenario_key → parsed JSON
+let currentKey = 'single_approach';
+let currentFi = 0;
+let playTimer = null;
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+// ---------------------------------------------------------------------------
+// Data loading
+// ---------------------------------------------------------------------------
+const SCENARIO_KEYS = ['single_approach', 'single_passby', 'two_vehicles', 'missed_recovery'];
+
+async function loadAll() {
+  const results = await Promise.allSettled(
+    SCENARIO_KEYS.map(k =>
+      fetch(`./data/demo_${k}.json`)
+        .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(d => [k, d])
+    )
+  );
+  let anyOk = false;
+  for (const r of results) {
+    if (r.status === 'fulfilled') {
+      const [k, d] = r.value;
+      allData[k] = d;
+      anyOk = true;
+    }
+  }
+  if (!anyOk) {
+    document.getElementById('load-msg').innerHTML =
+      '<p style="color:var(--red)">データが見つかりません。<br>' +
+      '<code>uv run python scripts/generate_demo.py --all</code> を実行してください。</p>';
+    return;
+  }
+  document.getElementById('load-msg').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+
+  // Disable selector options for missing data
+  document.querySelectorAll('#sel-scenario option').forEach(opt => {
+    if (!allData[opt.value]) opt.disabled = true;
+  });
+  // Pick first available scenario
+  currentKey = Object.keys(allData)[0];
+  document.getElementById('sel-scenario').value = currentKey;
+
+  initScenario();
+}
+
+// ---------------------------------------------------------------------------
+// Scenario initialisation
+// ---------------------------------------------------------------------------
+function initScenario() {
+  const data = allData[currentKey];
+  const frames = data.frame_data.frames;
+  const slider = document.getElementById('frame-slider');
+  slider.max = frames.length - 1;
+  slider.value = 0;
+  currentFi = 0;
+  stopPlay();
+  drawFrame(0);
+  updateMetrics(data);
+}
+
+// ---------------------------------------------------------------------------
+// Coordinate transform helpers
+// ---------------------------------------------------------------------------
+function computeBounds(frames) {
+  let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
+  for (const f of frames) {
+    for (const g of f.gt) {
+      xmin = Math.min(xmin, g.x - g.l); xmax = Math.max(xmax, g.x + g.l);
+      ymin = Math.min(ymin, g.y - g.l); ymax = Math.max(ymax, g.y + g.l);
+    }
+    for (const [ox, oy] of f.obs) {
+      xmin = Math.min(xmin, ox); xmax = Math.max(xmax, ox);
+      ymin = Math.min(ymin, oy); ymax = Math.max(ymax, oy);
+    }
+    // Always include sensor origin
+    xmin = Math.min(xmin, -2); xmax = Math.max(xmax, 2);
+    ymin = Math.min(ymin, -2); ymax = Math.max(ymax, 2);
+  }
+  // Add padding
+  const pad = Math.max((xmax - xmin), (ymax - ymin)) * 0.1 + 2;
+  return { xmin: xmin - pad, xmax: xmax + pad, ymin: ymin - pad, ymax: ymax + pad };
+}
+
+function makeTransform(bounds, cw, ch, margin) {
+  const scaleX = (cw - 2 * margin) / (bounds.xmax - bounds.xmin);
+  const scaleY = (ch - 2 * margin) / (bounds.ymax - bounds.ymin);
+  const scale = Math.min(scaleX, scaleY);
+  const ox = margin + (cw - 2*margin - (bounds.xmax - bounds.xmin) * scale) / 2 - bounds.xmin * scale;
+  const oy = ch - margin - (ch - 2*margin - (bounds.ymax - bounds.ymin) * scale) / 2 + bounds.ymin * scale;
+  return {
+    wx: x => x * scale + ox,
+    wy: y => -y * scale + oy,   // flip Y
+    scale,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Drawing
+// ---------------------------------------------------------------------------
+function drawFrame(fi) {
+  const data = allData[currentKey];
+  const frames = data.frame_data.frames;
+  const frame = frames[fi];
+
+  // Resize canvas to match display width
+  const dpr = window.devicePixelRatio || 1;
+  const displayW = canvas.parentElement.clientWidth;
+  const displayH = 420;
+  canvas.width  = displayW * dpr;
+  canvas.height = displayH * dpr;
+  canvas.style.height = displayH + 'px';
+  ctx.scale(dpr, dpr);
+
+  const cw = displayW, ch = displayH, margin = 32;
+
+  // Bounds from all frames (stable view)
+  const bounds = computeBounds(frames);
+  const t = makeTransform(bounds, cw, ch, margin);
+
+  ctx.clearRect(0, 0, cw, ch);
+
+  // Background
+  ctx.fillStyle = '#1a1d27';
+  ctx.fillRect(0, 0, cw, ch);
+
+  // Grid
+  drawGrid(ctx, t, bounds, cw, ch);
+
+  // Observation points
+  for (const [ox, oy] of frame.obs) {
+    ctx.beginPath();
+    ctx.arc(t.wx(ox), t.wy(oy), 3, 0, 2 * Math.PI);
+    ctx.fillStyle = 'rgba(250,204,21,0.75)';
+    ctx.fill();
+  }
+
+  // GT rectangles
+  for (const g of frame.gt) {
+    drawRect(ctx, t, g.x, g.y, g.yaw, g.l, g.w,
+             'rgba(74,222,128,0.2)', '#4ade80', 2);
+    // Heading arrow
+    const ax = g.x + Math.cos(g.yaw) * g.l * 0.45;
+    const ay = g.y + Math.sin(g.yaw) * g.l * 0.45;
+    drawArrow(ctx, t, g.x, g.y, ax, ay, '#4ade80', 1.5);
+  }
+
+  // GGIW estimate ellipses
+  for (const e of frame.est) {
+    drawEllipse(ctx, t, e.x, e.y, e.ext_a, e.ext_b, e.ext_theta,
+                'rgba(248,113,113,0.2)', '#f87171', 2);
+    // Velocity arrow (scale: 1 s ahead)
+    drawArrow(ctx, t, e.x, e.y, e.x + e.vx, e.y + e.vy, '#fb923c', 2);
+    // Position dot
+    ctx.beginPath();
+    ctx.arc(t.wx(e.x), t.wy(e.y), 4, 0, 2 * Math.PI);
+    ctx.fillStyle = '#f87171';
+    ctx.fill();
+  }
+
+  // Sensor origin (star)
+  drawSensor(ctx, t.wx(0), t.wy(0));
+
+  // Frame label
+  ctx.fillStyle = '#8892a4';
+  ctx.font = '12px monospace';
+  ctx.fillText(`Frame ${fi} / ${frames.length - 1}  |  ${frame.missed ? '⚠ MISSED' : 'observed: ' + frame.obs.length + ' pts'}`, margin, 20);
+
+  // Update slider label
+  document.getElementById('frame-label').textContent = `${fi} / ${frames.length - 1}`;
+  document.getElementById('frame-slider').value = fi;
+
+  // Missed badge
+  document.getElementById('missed-badge').style.display = frame.missed ? 'block' : 'none';
+}
+
+function drawGrid(ctx, t, bounds, cw, ch) {
+  ctx.strokeStyle = '#2e3347';
+  ctx.lineWidth = 1;
+  // Vertical lines every 5 m
+  for (let x = Math.ceil(bounds.xmin / 5) * 5; x <= bounds.xmax; x += 5) {
+    ctx.beginPath();
+    ctx.moveTo(t.wx(x), 0); ctx.lineTo(t.wx(x), ch);
+    ctx.stroke();
+    ctx.fillStyle = '#3a4155';
+    ctx.font = '10px sans-serif';
+    ctx.fillText(x + 'm', t.wx(x) + 2, ch - 4);
+  }
+  // Horizontal lines every 5 m
+  for (let y = Math.ceil(bounds.ymin / 5) * 5; y <= bounds.ymax; y += 5) {
+    ctx.beginPath();
+    ctx.moveTo(0, t.wy(y)); ctx.lineTo(cw, t.wy(y));
+    ctx.stroke();
+    ctx.fillStyle = '#3a4155';
+    ctx.font = '10px sans-serif';
+    ctx.fillText(y + 'm', 2, t.wy(y) - 3);
+  }
+  // Axes
+  ctx.strokeStyle = '#3a4155';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(0, t.wy(0)); ctx.lineTo(cw, t.wy(0)); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(t.wx(0), 0); ctx.lineTo(t.wx(0), ch); ctx.stroke();
+}
+
+function drawRect(ctx, t, cx, cy, yaw, l, w, fill, stroke, lw) {
+  const s = t.scale;
+  ctx.save();
+  ctx.translate(t.wx(cx), t.wy(cy));
+  ctx.rotate(-yaw);  // Y-flip negates rotation direction
+  ctx.scale(1, -1);  // re-flip local Y so rect draws right-side up
+  ctx.beginPath();
+  ctx.rect(-l/2 * s, -w/2 * s, l * s, w * s);
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = lw;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawEllipse(ctx, t, cx, cy, a, b, theta, fill, stroke, lw) {
+  const s = t.scale;
+  ctx.save();
+  ctx.translate(t.wx(cx), t.wy(cy));
+  ctx.rotate(-theta);
+  ctx.beginPath();
+  ctx.ellipse(0, 0, a * s, b * s, 0, 0, 2 * Math.PI);
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = lw;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawArrow(ctx, t, x1, y1, x2, y2, color, lw) {
+  const sx = t.wx(x1), sy = t.wy(y1);
+  const ex = t.wx(x2), ey = t.wy(y2);
+  const len = Math.hypot(ex - sx, ey - sy);
+  if (len < 3) return;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lw;
+  ctx.beginPath();
+  ctx.moveTo(sx, sy); ctx.lineTo(ex, ey);
+  ctx.stroke();
+  // Arrowhead
+  const angle = Math.atan2(ey - sy, ex - sx);
+  const hs = Math.min(8, len * 0.4);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(ex, ey);
+  ctx.lineTo(ex - hs * Math.cos(angle - 0.4), ey - hs * Math.sin(angle - 0.4));
+  ctx.lineTo(ex - hs * Math.cos(angle + 0.4), ey - hs * Math.sin(angle + 0.4));
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawSensor(ctx, sx, sy) {
+  const r = 7;
+  ctx.strokeStyle = '#60a5fa';
+  ctx.lineWidth = 2;
+  [0, 45, 90, 135].forEach(deg => {
+    const rad = deg * Math.PI / 180;
+    ctx.beginPath();
+    ctx.moveTo(sx + r * Math.cos(rad), sy + r * Math.sin(rad));
+    ctx.lineTo(sx - r * Math.cos(rad), sy - r * Math.sin(rad));
+    ctx.stroke();
+  });
+  ctx.beginPath();
+  ctx.arc(sx, sy, 3, 0, 2 * Math.PI);
+  ctx.fillStyle = '#60a5fa';
+  ctx.fill();
+}
+
+// ---------------------------------------------------------------------------
+// Metrics strip
+// ---------------------------------------------------------------------------
+function updateMetrics(data) {
+  const s = data.summary;
+  const items = [
+    { label: 'GOSPA [m]',    val: s.gospa.toFixed(3),       color: '#60a5fa' },
+    { label: 'Pos RMSE [m]', val: s.pos_rmse.toFixed(3),    color: '#fb923c' },
+    { label: 'IDSW/run',     val: s.id_switches.toFixed(1), color: '#facc15' },
+  ];
+  document.getElementById('metrics-strip').innerHTML = items.map(it => `
+    <div class="metric">
+      <div class="val" style="color:${it.color}">${it.val}</div>
+      <div class="lbl">${it.label}</div>
+    </div>`).join('');
+}
+
+// ---------------------------------------------------------------------------
+// Controls
+// ---------------------------------------------------------------------------
+document.getElementById('sel-scenario').addEventListener('change', e => {
+  currentKey = e.target.value;
+  if (!allData[currentKey]) return;
+  currentFi = 0;
+  initScenario();
+});
+
+document.getElementById('frame-slider').addEventListener('input', e => {
+  currentFi = parseInt(e.target.value);
+  drawFrame(currentFi);
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  stopPlay();
+  currentFi = 0;
+  drawFrame(0);
+});
+
+document.getElementById('btn-step').addEventListener('click', () => {
+  const n = allData[currentKey].frame_data.frames.length;
+  currentFi = (currentFi + 1) % n;
+  drawFrame(currentFi);
+});
+
+document.getElementById('btn-play').addEventListener('click', () => {
+  if (playTimer) stopPlay();
+  else startPlay();
+});
+
+function startPlay() {
+  document.getElementById('btn-play').textContent = '⏸ Pause';
+  playTimer = setInterval(() => {
+    const n = allData[currentKey].frame_data.frames.length;
+    currentFi = (currentFi + 1) % n;
+    drawFrame(currentFi);
+    if (currentFi === n - 1) stopPlay();
+  }, 400);
+}
+
+function stopPlay() {
+  clearInterval(playTimer);
+  playTimer = null;
+  document.getElementById('btn-play').textContent = '▶ Play';
+}
+
+window.addEventListener('resize', () => { drawFrame(currentFi); });
+
+// ---------------------------------------------------------------------------
+// Boot
+// ---------------------------------------------------------------------------
+loadAll();
+</script>
+</body>
+</html>

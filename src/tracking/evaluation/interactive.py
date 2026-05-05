@@ -53,20 +53,39 @@ SCENARIOS: dict[str, dict] = {
 # 1 MC ラン
 # ---------------------------------------------------------------------------
 
+def _ggiw_to_ellipse(state) -> dict:
+    """GGIW extent matrix → 描画用楕円パラメータ (半軸長・角度)。"""
+    X = state.extent_mean  # 2×2 SPD
+    vals, vecs = np.linalg.eigh(X)
+    # eigh は昇順で返す → vals[1] が長軸
+    return {
+        "x":         float(state.m[0]),
+        "y":         float(state.m[1]),
+        "vx":        float(state.m[2]),
+        "vy":        float(state.m[3]),
+        "ext_a":     float(np.sqrt(max(vals[1], 1e-6))),
+        "ext_b":     float(np.sqrt(max(vals[0], 1e-6))),
+        "ext_theta": float(np.arctan2(vecs[1, 1], vecs[0, 1])),
+    }
+
+
 def run_once(
     sc_cfg: dict,
     filt: PMBMFilter,
     seed: int = 0,
-) -> dict[str, list[float]]:
+    record_frames: bool = False,
+) -> dict:
     """1 MC ランを実行して per-frame 指標を返す。
 
     Args:
-        sc_cfg: SCENARIOS の値 dict。
-        filt:   初期化済み PMBMFilter。
-        seed:   Python の random モジュールへのシード。
+        sc_cfg:        SCENARIOS の値 dict。
+        filt:          初期化済み PMBMFilter。
+        seed:          Python の random モジュールへのシード。
+        record_frames: True のとき GT/obs/est の 2D データを snapshots に記録。
 
     Returns:
-        {"gospa": [...], "pos_rmse": [...], "id_switches": [...]}
+        {"gospa": [...], "pos_rmse": [...], "id_switches": [...],
+         "snapshots": [...] or None}
     """
     random.seed(seed)
     lidar = LidarSimulator(range_noise=0.05)
@@ -78,6 +97,7 @@ def run_once(
     pos_errs: list[float] = []
     id_sw_vals: list[float] = []
     prev_asgn: dict[int, int] = {}
+    snapshots: list[dict] | None = [] if record_frames else None
 
     for fi in range(sc_cfg["n_frames"]):
         for v in vehicles:
@@ -111,7 +131,23 @@ def run_once(
         )))
         prev_asgn = curr_asgn
 
-    return {"gospa": gospa_vals, "pos_rmse": pos_errs, "id_switches": id_sw_vals}
+        if record_frames:
+            snapshots.append({
+                "fi":   fi,
+                "missed": fi in miss_frames,
+                "gt":  [{"x": float(v.x), "y": float(v.y),
+                          "yaw": float(v.yaw), "l": float(v.L), "w": float(v.W)}
+                         for v in vehicles],
+                "obs": [[float(x), float(y)] for x, y in zip(ox, oy)],
+                "est": [_ggiw_to_ellipse(s) for s in ests],
+            })
+
+    return {
+        "gospa":     gospa_vals,
+        "pos_rmse":  pos_errs,
+        "id_switches": id_sw_vals,
+        "snapshots": snapshots,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +174,8 @@ def run_simulation_json(
     all_pos   = np.zeros((n_mc, n_frames))
     all_idsw  = np.zeros((n_mc, n_frames))
 
+    frame_data: dict | None = None
+
     for mc_i in range(n_mc):
         filt = PMBMFilter(
             p_survival=p_survival,
@@ -146,10 +184,13 @@ def run_simulation_json(
             max_hypotheses=50,
             prune_log_threshold=prune_log_threshold,
         )
-        r = run_once(sc_cfg, filt, seed=mc_i * 17)
+        # MC run 0 だけフレームデータを記録する
+        r = run_once(sc_cfg, filt, seed=mc_i * 17, record_frames=(mc_i == 0))
         all_gospa[mc_i] = np.where(np.isfinite(r["gospa"]),    r["gospa"],    np.nan)
         all_pos[mc_i]   = np.where(np.isfinite(r["pos_rmse"]), r["pos_rmse"], np.nan)
         all_idsw[mc_i]  = r["id_switches"]
+        if mc_i == 0:
+            frame_data = {"sensor_origin": [0, 0], "frames": r["snapshots"]}
 
     gospa_mean = np.nanmean(all_gospa, axis=0)
     pos_mean   = np.nanmean(all_pos,   axis=0)
@@ -163,7 +204,7 @@ def run_simulation_json(
 
     svg = _make_plot(scenario_key, n_mc, p_survival, p_detection, birth_weight,
                      n_frames, gospa_mean, pos_mean, idsw_mean)
-    return json.dumps({"summary": summary, "svg": svg})
+    return json.dumps({"summary": summary, "svg": svg, "frame_data": frame_data})
 
 
 def _make_plot(
