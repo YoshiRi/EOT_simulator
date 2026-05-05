@@ -262,7 +262,9 @@ _SCENARIOS = {
 
 
 def _run_once(sc_cfg, filt, seed):
-    lidar = LidarSimulator(range_noise=0.05, seed=seed)
+    import random as _random
+    _random.seed(seed)
+    lidar = LidarSimulator(range_noise=0.05)
     vehicles = sc_cfg['vehicles']()
     smoothers = {}
     dt = sc_cfg['dt']
