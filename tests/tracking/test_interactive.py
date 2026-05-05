@@ -243,3 +243,92 @@ class TestRunSimulationJson:
         r = run_once(cfg, _make_filter(), seed=0, record_frames=True)
         assert isinstance(r["snapshots"], list)
         assert len(r["snapshots"]) == cfg["n_frames"]
+
+
+# ---------------------------------------------------------------------------
+# OBB / cluster frame snapshot tests (design: rectangle_visualization.md)
+# ---------------------------------------------------------------------------
+
+def _frames_with_obb() -> list[dict]:
+    """Run single_approach for 8 frames with record_frames=True; return snapshots."""
+    cfg = dict(SCENARIOS["single_approach"])
+    cfg["n_frames"] = 8
+    r = run_once(cfg, _make_filter(), seed=0, record_frames=True)
+    return r["snapshots"]
+
+
+class TestOBBFrameSnapshot:
+    def test_frame_clusters_present(self):
+        """Every frame snapshot has 'clusters'; non-missed frames with obs have entries."""
+        frames = _frames_with_obb()
+        for frame in frames:
+            assert "clusters" in frame
+            for cl in frame["clusters"]:
+                assert "centroid" in cl
+                assert "points" in cl
+                assert len(cl["centroid"]) == 2
+                assert len(cl["points"]) > 0
+
+    def test_frame_est_obb_structure(self):
+        """Every estimate in every frame has an 'obb' key (None or dict)."""
+        frames = _frames_with_obb()
+        for frame in frames:
+            for e in frame["est"]:
+                assert "obb" in e
+                # obb is either None or a dict with the required keys
+                if e["obb"] is not None:
+                    assert {"cx", "cy", "theta", "l", "w", "corners"} <= e["obb"].keys()
+
+    def test_obb_corners_are_4_points(self):
+        """When obb is not None, corners contains exactly 4 2-D points."""
+        frames = _frames_with_obb()
+        found = False
+        for frame in frames:
+            for e in frame["est"]:
+                if e["obb"] is not None:
+                    corners = e["obb"]["corners"]
+                    assert len(corners) == 4
+                    for pt in corners:
+                        assert len(pt) == 2
+                        assert all(np.isfinite(v) for v in pt)
+                    found = True
+        assert found, "No frame had a non-None OBB — increase n_frames or check filter"
+
+    def test_obb_dimensions_positive(self):
+        """OBB length and width must both be positive."""
+        frames = _frames_with_obb()
+        for frame in frames:
+            for e in frame["est"]:
+                if e["obb"] is not None:
+                    assert e["obb"]["l"] > 0
+                    assert e["obb"]["w"] > 0
+
+    def test_obb_center_near_cluster_centroid(self):
+        """OBB centre must be within 3 m of the matched cluster centroid."""
+        frames = _frames_with_obb()
+        for frame in frames:
+            for e in frame["est"]:
+                if e["obb"] is None:
+                    continue
+                cx, cy = e["obb"]["cx"], e["obb"]["cy"]
+                # Find closest cluster centroid
+                if not frame["clusters"]:
+                    continue
+                min_dist = min(
+                    math.hypot(cx - cl["centroid"][0], cy - cl["centroid"][1])
+                    for cl in frame["clusters"]
+                )
+                assert min_dist < 3.0, f"OBB centre too far from any cluster: {min_dist:.2f} m"
+
+    def test_missed_frame_obb_is_null(self):
+        """In missed frames all estimates must have obb=None."""
+        cfg = dict(SCENARIOS["missed_recovery"])
+        cfg["n_frames"] = 15
+        r = run_once(cfg, _make_filter(), seed=0, record_frames=True)
+        miss_set = set(SCENARIOS["missed_recovery"]["miss_frames"])
+        for frame in r["snapshots"]:
+            if frame["fi"] in miss_set:
+                for e in frame["est"]:
+                    assert e["obb"] is None, (
+                        f"frame {frame['fi']}: expected obb=null, got {e['obb']}"
+                    )

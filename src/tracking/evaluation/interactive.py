@@ -15,11 +15,15 @@ import matplotlib
 matplotlib.use("agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.optimize import linear_sum_assignment
 
 from src.simulator import LidarSimulator, VehicleSimulator
 from src.tracking.evaluation.association import associate
 from src.tracking.evaluation.metrics import gospa as gospa_metric
+from src.tracking.measurement.partition import partition
 from src.tracking.pmbm.pmbm_filter import BirthModel, PMBMFilter
+from src.tracking.shape.rectangle_fitting import OBBResult, fit_rectangle
+from src.tracking.shape.smoothing import ExponentialSmoother
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +73,121 @@ def _ggiw_to_ellipse(state) -> dict:
     }
 
 
+def _obb_to_dict(obb: OBBResult) -> dict:
+    """OBBResult → JSON シリアライズ可能な dict。"""
+    return {
+        "cx":      float(obb.center[0]),
+        "cy":      float(obb.center[1]),
+        "theta":   float(obb.theta),
+        "l":       float(obb.length),
+        "w":       float(obb.width),
+        "corners": obb.corners().tolist(),
+    }
+
+
+def _match_clusters_to_estimates(cells, ests) -> list:
+    """クラスタと推定をセントロイド距離で最近傍マッチング (ゲート 6.0 m)。
+
+    Returns:
+        ests と同じ長さのリスト。対応クラスタなしの場合は None。
+    """
+    if not ests or not cells:
+        return [None] * len(ests)
+
+    gate = 6.0
+    est_pos = np.array([s.position for s in ests])          # (n_est, 2)
+    cell_ctr = np.array([c.centroid for c in cells])         # (n_cell, 2)
+
+    # コスト行列 (n_est, n_cell)
+    diff = est_pos[:, None, :] - cell_ctr[None, :, :]        # (n_est, n_cell, 2)
+    cost = np.linalg.norm(diff, axis=2)
+
+    gated = np.where(cost < gate, cost, 1e9)
+    row_ind, col_ind = linear_sum_assignment(gated)
+
+    matched: list = [None] * len(ests)
+    for ri, ci in zip(row_ind, col_ind):
+        if cost[ri, ci] < gate:
+            matched[ri] = cells[ci]
+    return matched
+
+
+class LocalTracker:
+    """フレーム間でローカル ID と ExponentialSmoother を管理するトラッカー。
+
+    PMBM はトラックに永続 ID を付与しないため、推定位置のハンガリアン法マッチで
+    フレーム間同一性を近似し、スムーザ状態を継続する。
+    """
+
+    def __init__(self, gate_dist: float = 5.0, smoother_alpha: float = 0.4) -> None:
+        self._gate_dist = gate_dist
+        self._smoother_alpha = smoother_alpha
+        self._smoothers: dict[int, ExponentialSmoother] = {}
+        self._positions: dict[int, np.ndarray] = {}
+        self._next_id = 0
+
+    def update(self, ests: list, matched_cells: list) -> list:
+        """推定リストとマッチ済みクラスタからスムーズ OBB を計算する。
+
+        Returns:
+            ests と同じ長さのリスト (OBBResult | None)。
+        """
+        if not ests:
+            self._positions = {}
+            return []
+
+        curr_pos = np.array([s.position for s in ests])  # (n, 2)
+
+        # 前フレーム推定との Hungarian マッチング
+        est_to_id: dict[int, int] = {}
+        if self._positions:
+            prev_ids = list(self._positions.keys())
+            prev_pos = np.array([self._positions[pid] for pid in prev_ids])
+
+            n_prev, n_curr = len(prev_ids), len(ests)
+            cost = np.full((n_prev, n_curr), 1e9)
+            for i, pp in enumerate(prev_pos):
+                dists = np.linalg.norm(curr_pos - pp, axis=1)
+                mask = dists < self._gate_dist
+                cost[i, mask] = dists[mask]
+
+            row_ind, col_ind = linear_sum_assignment(cost)
+            for ri, ci in zip(row_ind, col_ind):
+                if cost[ri, ci] < self._gate_dist:
+                    est_to_id[ci] = prev_ids[ri]
+
+        # 未マッチ推定に新規 ID を割り当て
+        for j in range(len(ests)):
+            if j not in est_to_id:
+                est_to_id[j] = self._next_id
+                self._next_id += 1
+
+        # 消滅したトラックのスムーザを削除
+        active_ids = set(est_to_id.values())
+        for tid in list(self._smoothers.keys()):
+            if tid not in active_ids:
+                del self._smoothers[tid]
+
+        # OBB フィッティング + スムージング
+        result: list = []
+        new_positions: dict[int, np.ndarray] = {}
+        for j, (est, cell) in enumerate(zip(ests, matched_cells)):
+            tid = est_to_id[j]
+            new_positions[tid] = curr_pos[j]
+            if tid not in self._smoothers:
+                self._smoothers[tid] = ExponentialSmoother(alpha=self._smoother_alpha)
+
+            if cell is not None and len(cell.points) >= 2:
+                raw_obb = fit_rectangle(cell.points)
+                smoothed = self._smoothers[tid].update(raw_obb)
+                result.append(smoothed)
+            else:
+                result.append(None)
+
+        self._positions = new_positions
+        return result
+
+
 def run_once(
     sc_cfg: dict,
     filt: PMBMFilter,
@@ -98,6 +217,7 @@ def run_once(
     id_sw_vals: list[float] = []
     prev_asgn: dict[int, int] = {}
     snapshots: list[dict] | None = [] if record_frames else None
+    tracker = LocalTracker() if record_frames else None
 
     for fi in range(sc_cfg["n_frames"]):
         for v in vehicles:
@@ -132,14 +252,37 @@ def run_once(
         prev_asgn = curr_asgn
 
         if record_frames:
+            assert tracker is not None
+            # クラスタ取得 (OBB フィッティング用; フィルタ内部の partition と独立)
+            if ox:
+                pts = np.column_stack([ox, oy])
+                cells = partition(pts, eps=2.0)
+            else:
+                cells = []
+
+            matched_cells = _match_clusters_to_estimates(cells, ests)
+            obbs = tracker.update(ests, matched_cells)
+
+            clusters_data = [
+                {
+                    "centroid": c.centroid.tolist(),
+                    "points":   c.points.tolist(),
+                }
+                for c in cells
+            ]
+
             snapshots.append({
-                "fi":   fi,
-                "missed": fi in miss_frames,
-                "gt":  [{"x": float(v.x), "y": float(v.y),
-                          "yaw": float(v.yaw), "l": float(v.L), "w": float(v.W)}
-                         for v in vehicles],
-                "obs": [[float(x), float(y)] for x, y in zip(ox, oy)],
-                "est": [_ggiw_to_ellipse(s) for s in ests],
+                "fi":       fi,
+                "missed":   fi in miss_frames,
+                "gt":       [{"x": float(v.x), "y": float(v.y),
+                               "yaw": float(v.yaw), "l": float(v.L), "w": float(v.W)}
+                              for v in vehicles],
+                "obs":      [[float(x), float(y)] for x, y in zip(ox, oy)],
+                "clusters": clusters_data,
+                "est":      [
+                    {**_ggiw_to_ellipse(s), "obb": _obb_to_dict(o) if o is not None else None}
+                    for s, o in zip(ests, obbs)
+                ],
             })
 
     return {
