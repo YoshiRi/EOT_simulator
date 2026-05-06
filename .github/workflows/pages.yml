@@ -48,6 +48,10 @@ jobs:
       - name: Generate reports (tests + evaluation)
         run: uv run python scripts/generate_report.py --n-mc 30
 
+      # --- Generate demo frame data for demo.html ---
+      - name: Generate demo frame data
+        run: uv run python scripts/generate_demo.py --all --n-mc 5
+
       # --- Upload artifact for deployment ---
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
