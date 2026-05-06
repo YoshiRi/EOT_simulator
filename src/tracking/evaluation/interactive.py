@@ -31,23 +31,27 @@ from src.tracking.shape.smoothing import ExponentialSmoother
 # ---------------------------------------------------------------------------
 
 SCENARIOS: dict[str, dict] = {
-    "single_approach": {
-        "vehicles": lambda: [VehicleSimulator(25.0, 0.0, math.pi, 3.0, 50 / 3.6, 2.0, 4.0)],
-        "n_frames": 20, "dt": 0.5, "angle_res_deg": 2.0, "miss_frames": [],
-    },
-    "single_passby": {
+    # 並行追い抜き: 車両が y=8m 側方を右方向に通過 (長辺側が観測される)
+    "passby_parallel": {
         "vehicles": lambda: [VehicleSimulator(-20.0, 8.0, 0.0, 5.0, 50 / 3.6, 2.0, 4.0)],
         "n_frames": 20, "dt": 0.5, "angle_res_deg": 2.0, "miss_frames": [],
     },
+    # 斜め追い抜き: 30° 斜めに通過 (コーナー面が観測される)
+    "passby_oblique": {
+        "vehicles": lambda: [VehicleSimulator(-20.0, -5.0, math.pi / 6, 5.0, 50 / 3.6, 2.0, 4.0)],
+        "n_frames": 20, "dt": 0.5, "angle_res_deg": 2.0, "miss_frames": [],
+    },
+    # 2台同時: 対向方向から追い抜き (長辺側 vs 長辺側)
     "two_vehicles": {
         "vehicles": lambda: [
-            VehicleSimulator(20.0, 0.0,  math.pi,       3.0, 50 / 3.6, 2.0, 4.0),
-            VehicleSimulator(0.0,  15.0, math.pi * 1.5, 2.0, 50 / 3.6, 2.0, 4.0),
+            VehicleSimulator(-20.0, 8.0,  0.0,     5.0, 50 / 3.6, 2.0, 4.0),
+            VehicleSimulator( 20.0, 14.0, math.pi, 4.0, 50 / 3.6, 2.0, 4.0),
         ],
         "n_frames": 20, "dt": 0.5, "angle_res_deg": 2.0, "miss_frames": [],
     },
+    # 欠損→復帰: 並行追い抜き中にフレーム 8-11 が欠損
     "missed_recovery": {
-        "vehicles": lambda: [VehicleSimulator(20.0, 0.0, math.pi, 2.0, 50 / 3.6, 2.0, 4.0)],
+        "vehicles": lambda: [VehicleSimulator(-15.0, 8.0, 0.0, 2.0, 50 / 3.6, 2.0, 4.0)],
         "n_frames": 25, "dt": 0.5, "angle_res_deg": 2.0, "miss_frames": list(range(8, 12)),
     },
 }

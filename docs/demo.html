@@ -73,8 +73,8 @@
       <div>
         <label>シナリオ</label>
         <select id="sel-scenario">
-          <option value="single_approach">単体アプローチ</option>
-          <option value="single_passby">単体追い越し</option>
+          <option value="passby_parallel">並行追い抜き</option>
+          <option value="passby_oblique">斜め追い抜き</option>
           <option value="two_vehicles">2台同時</option>
           <option value="missed_recovery">欠損→復帰</option>
         </select>
@@ -94,6 +94,7 @@
     <div class="canvas-wrap">
       <canvas id="canvas" height="480"></canvas>
       <div class="missed-badge" id="missed-badge">観測なし (miss)</div>
+      <div class="missed-badge" id="nodet-badge" style="background:rgba(251,146,60,0.2);border-color:var(--orange);color:var(--orange);top:44px;">未検知 (0 tracks)</div>
     </div>
 
     <div class="legend">
@@ -137,7 +138,7 @@ const ctx = canvas.getContext('2d');
 // ---------------------------------------------------------------------------
 // Data loading
 // ---------------------------------------------------------------------------
-const SCENARIO_KEYS = ['single_approach', 'single_passby', 'two_vehicles', 'missed_recovery'];
+const SCENARIO_KEYS = ['passby_parallel', 'passby_oblique', 'two_vehicles', 'missed_recovery'];
 
 async function loadAll() {
   const results = await Promise.allSettled(
@@ -313,16 +314,22 @@ function drawFrame(fi) {
   drawSensor(ctx, t.wx(0), t.wy(0));
 
   // Frame label
+  const nEst = frame.est.length;
+  const obsInfo = frame.missed ? '⚠ MISSED' : `obs: ${frame.obs.length} pts`;
+  const trackInfo = frame.missed ? '' : `  |  tracks: ${nEst}`;
   ctx.fillStyle = '#8892a4';
   ctx.font = '12px monospace';
-  ctx.fillText(`Frame ${fi} / ${frames.length - 1}  |  ${frame.missed ? '⚠ MISSED' : 'observed: ' + frame.obs.length + ' pts'}`, margin, 20);
+  ctx.fillText(`Frame ${fi} / ${frames.length - 1}  |  ${obsInfo}${trackInfo}`, margin, 20);
 
   // Update slider label
   document.getElementById('frame-label').textContent = `${fi} / ${frames.length - 1}`;
   document.getElementById('frame-slider').value = fi;
 
-  // Missed badge
-  document.getElementById('missed-badge').style.display = frame.missed ? 'block' : 'none';
+  // Status badges: missed (red) or no-detection (orange)
+  const isMissed = frame.missed;
+  const isNoDetect = !isMissed && nEst === 0;
+  document.getElementById('missed-badge').style.display = isMissed ? 'block' : 'none';
+  document.getElementById('nodet-badge').style.display = isNoDetect ? 'block' : 'none';
 }
 
 function drawGrid(ctx, t, bounds, cw, ch) {
