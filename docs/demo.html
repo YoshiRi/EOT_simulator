@@ -101,6 +101,7 @@
       <div class="legend-item"><div class="legend-rect" style="background:rgba(74,222,128,0.25);border:2px solid #4ade80;border-radius:2px"></div> GT (真値)</div>
       <div class="legend-item"><div class="legend-dot" style="background:rgba(250,204,21,0.7)"></div> LiDAR 観測点</div>
       <div class="legend-item"><div class="legend-ellipse" style="background:rgba(248,113,113,0.25);border:2px solid #f87171"></div> 推定 (GGIW extent)</div>
+      <div class="legend-item"><div class="legend-rect" style="background:rgba(251,146,60,0.2);border:2px solid #fb923c;border-radius:2px"></div> 推定 OBB</div>
       <div class="legend-item"><div style="width:14px;height:2px;background:#fb923c;display:inline-block"></div>&nbsp;速度ベクトル</div>
     </div>
 
@@ -109,6 +110,19 @@
 </main>
 
 <script>
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+// Color palette for cluster point coloring — one color per cluster index
+const CLUSTER_COLORS = [
+  'rgba(250,204,21,0.85)',   // yellow
+  'rgba(96,165,250,0.85)',   // blue
+  'rgba(167,243,208,0.85)',  // mint
+  'rgba(249,168,212,0.85)',  // pink
+  'rgba(196,181,253,0.85)',  // violet
+  'rgba(253,186,116,0.85)',  // peach
+];
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -244,12 +258,25 @@ function drawFrame(fi) {
   // Grid
   drawGrid(ctx, t, bounds, cw, ch);
 
-  // Observation points
-  for (const [ox, oy] of frame.obs) {
-    ctx.beginPath();
-    ctx.arc(t.wx(ox), t.wy(oy), 3, 0, 2 * Math.PI);
-    ctx.fillStyle = 'rgba(250,204,21,0.75)';
-    ctx.fill();
+  // Observation points (fallback when no cluster data)
+  if (!frame.clusters || frame.clusters.length === 0) {
+    for (const [ox, oy] of frame.obs) {
+      ctx.beginPath();
+      ctx.arc(t.wx(ox), t.wy(oy), 3, 0, 2 * Math.PI);
+      ctx.fillStyle = 'rgba(250,204,21,0.75)';
+      ctx.fill();
+    }
+  } else {
+    // Cluster-colored points — color cycles per cluster index
+    for (let ci = 0; ci < frame.clusters.length; ci++) {
+      const col = CLUSTER_COLORS[ci % CLUSTER_COLORS.length];
+      for (const [px, py] of frame.clusters[ci].points) {
+        ctx.beginPath();
+        ctx.arc(t.wx(px), t.wy(py), 3, 0, 2 * Math.PI);
+        ctx.fillStyle = col;
+        ctx.fill();
+      }
+    }
   }
 
   // GT rectangles
@@ -266,6 +293,13 @@ function drawFrame(fi) {
   for (const e of frame.est) {
     drawEllipse(ctx, t, e.x, e.y, e.ext_a, e.ext_b, e.ext_theta,
                 'rgba(248,113,113,0.2)', '#f87171', 2);
+  }
+
+  // Estimated OBB rectangles (drawn on top of ellipses)
+  for (const e of frame.est) {
+    if (e.obb) {
+      drawOBB(ctx, t, e.obb);
+    }
     // Velocity arrow (scale: 1 s ahead)
     drawArrow(ctx, t, e.x, e.y, e.x + e.vx, e.y + e.vy, '#fb923c', 2);
     // Position dot
@@ -372,6 +406,21 @@ function drawArrow(ctx, t, x1, y1, x2, y2, color, lw) {
   ctx.closePath();
   ctx.fill();
   ctx.restore();
+}
+
+function drawOBB(ctx, t, obb) {
+  const corners = obb.corners;
+  ctx.beginPath();
+  ctx.moveTo(t.wx(corners[0][0]), t.wy(corners[0][1]));
+  for (let i = 1; i < corners.length; i++) {
+    ctx.lineTo(t.wx(corners[i][0]), t.wy(corners[i][1]));
+  }
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(251,146,60,0.15)';
+  ctx.fill();
+  ctx.strokeStyle = '#fb923c';
+  ctx.lineWidth = 2;
+  ctx.stroke();
 }
 
 function drawSensor(ctx, sx, sy) {
